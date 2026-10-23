@@ -1,0 +1,22 @@
+services:
+  odk-visualizer:
+    build: .
+    image: odk-visualizer:latest
+    container_name: odk-visualizer
+    restart: unless-stopped
+    init: true
+    env_file:                 # facultatif : réglages (aucun identifiant ODK n'y est nécessaire)
+      - path: .env
+        required: false
+    environment:
+      PORT: 3000
+    ports:
+      - "${HOST_PORT:-3000}:3000"
+    volumes:
+      - odkvis-data:/app/data  # saved visualizations
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
+
+volumes:
+  odkvis-data:
