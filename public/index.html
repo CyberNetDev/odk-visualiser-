@@ -1,0 +1,166 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ODK Visualizer</title>
+  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="vendor/leaflet.min.css">
+  <script src="vendor/echarts.min.js"></script>
+  <script src="vendor/leaflet.min.js"></script>
+</head>
+<body>
+  <!-- ======================= Connexion ======================= -->
+  <section id="login" class="login" hidden>
+    <form id="loginForm" class="login-card" autocomplete="on">
+      <div class="login-brand"><span class="logo">◧</span> ODK Visualizer</div>
+      <p class="login-sub">Connectez-vous avec votre compte <b>ODK Central</b>. Vous verrez uniquement les projets auxquels votre compte a accès.</p>
+      <p id="loginMsg" class="login-msg" hidden></p>
+
+      <label id="serverWrap">Serveur ODK Central
+        <input id="loginServer" name="server" type="text" inputmode="url" list="recentServers" placeholder="https://central.monorg.org" required>
+        <datalist id="recentServers"></datalist>
+        <small>L'adresse que vous utilisez pour ouvrir ODK Central dans le navigateur.</small>
+      </label>
+      <div id="serverLocked" class="locked" hidden></div>
+
+      <label>E-mail
+        <input id="loginEmail" name="email" type="email" autocomplete="username" required>
+      </label>
+      <label>Mot de passe
+        <span class="pw">
+          <input id="loginPassword" name="password" type="password" autocomplete="current-password" required>
+          <button type="button" id="togglePw" class="link" aria-label="Afficher le mot de passe">Afficher</button>
+        </span>
+      </label>
+      <label class="check"><input type="checkbox" id="rememberServer" checked> Mémoriser ce serveur et cet e-mail sur cet appareil</label>
+
+      <button type="submit" id="loginBtn" class="primary">Se connecter</button>
+      <button type="button" id="demoBtn" class="ghost wide">Essayer avec des données de démonstration</button>
+      <p class="login-foot">Le mot de passe est transmis uniquement à votre serveur ODK Central et n'est jamais enregistré.</p>
+    </form>
+  </section>
+
+  <!-- ======================= Application ======================= -->
+  <div id="appRoot" class="root" hidden>
+  <header class="topbar">
+    <div class="brand"><span class="logo">◧</span> ODK Visualizer <span id="demoBadge" class="badge" hidden>DÉMO</span></div>
+    <div class="vistype">
+      <label for="visType" class="sr">Type de visualisation</label>
+      <select id="visType">
+        <option value="column">Colonnes</option>
+        <option value="stackedColumn">Colonnes empilées</option>
+        <option value="bar">Barres</option>
+        <option value="stackedBar">Barres empilées</option>
+        <option value="line">Courbe</option>
+        <option value="area">Aires</option>
+        <option value="pie">Secteurs</option>
+        <option value="pivot">Tableau croisé</option>
+        <option value="single">Valeur unique</option>
+        <option value="map">Carte (points GPS)</option>
+      </select>
+    </div>
+    <div class="actions">
+      <button id="btnNew" class="ghost">Nouveau</button>
+      <button id="btnOpen" class="ghost">Ouvrir</button>
+      <button id="btnSave" class="ghost">Enregistrer</button>
+      <button id="btnSaveAs" class="ghost">Enregistrer sous…</button>
+      <div class="menu">
+        <button id="btnDownload" class="ghost">Télécharger ▾</button>
+        <div class="menu-list" id="downloadMenu" hidden>
+          <button data-dl="png">Image (PNG)</button>
+          <button data-dl="table">Tableau agrégé (CSV)</button>
+          <button data-dl="raw">Données brutes filtrées (CSV)</button>
+        </div>
+      </div>
+      <div class="menu">
+        <button id="btnUser" class="ghost user"><span class="avatar" id="userAvatar">?</span><span id="userName"></span> ▾</button>
+        <div class="menu-list" id="userMenu" hidden>
+          <div class="menu-info"><b id="userFull"></b><br><span id="userServer"></span></div>
+          <button id="btnSwitch">Changer de serveur / compte</button>
+          <button id="btnLogout">Se déconnecter</button>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <div class="app">
+    <aside class="sidebar">
+      <section class="panel">
+        <h3>Source de données</h3>
+        <label>Projet <select id="project"></select></label>
+        <label>Formulaire <select id="form"></select></label>
+        <label>Table <select id="table"></select></label>
+        <div class="row2">
+          <label>Soumis du <input type="date" id="from"></label>
+          <label>au <input type="date" id="to"></label>
+        </div>
+        <label>État de revue
+          <select id="reviewState">
+            <option value="">Toutes les soumissions</option>
+            <option value="null,approved,edited,hasIssues">Exclure les rejetées</option>
+            <option value="approved">Approuvées uniquement</option>
+          </select>
+        </label>
+        <div class="status"><span id="rowCount">—</span> <button id="btnRefresh" class="link" title="Recharger depuis ODK Central">↻ actualiser</button></div>
+      </section>
+      <section class="panel fields-panel">
+        <h3>Champs</h3>
+        <input id="fieldSearch" type="search" placeholder="Rechercher un champ">
+        <ul id="fieldList" class="field-list"></ul>
+        <p class="hint">Glissez un champ vers Colonnes, Lignes ou Filtre — ou cliquez dessus.</p>
+      </section>
+    </aside>
+
+    <main class="main">
+      <section class="layout">
+        <div class="zone-row"><span class="zone-label">Colonnes</span><div class="zone" data-zone="columns"></div></div>
+        <div class="zone-row"><span class="zone-label">Lignes</span><div class="zone" data-zone="rows"></div></div>
+        <div class="zone-row"><span class="zone-label">Filtre</span><div class="zone" data-zone="filters"></div></div>
+        <div class="zone-row measure">
+          <span class="zone-label">Valeur</span>
+          <div class="measure-ctl">
+            <select id="agg">
+              <option value="count">Nombre</option>
+              <option value="sum">Somme de</option>
+              <option value="avg">Moyenne de</option>
+              <option value="min">Minimum de</option>
+              <option value="max">Maximum de</option>
+              <option value="pct">% du total (nombre)</option>
+            </select>
+            <select id="measureField"></select>
+            <span class="opts">
+              <label><input type="checkbox" id="optValues"> Afficher les valeurs</label>
+              <label><input type="checkbox" id="optPretty" checked> Libellés lisibles</label>
+              <label><input type="checkbox" id="optHideEmpty"> Masquer (vide)</label>
+              <label>Tri <select id="optSort"><option value="label">Libellé</option><option value="desc">Valeur ↓</option><option value="asc">Valeur ↑</option></select></label>
+              <label>Top <input type="number" id="optLimit" min="0" placeholder="tous"></label>
+            </span>
+          </div>
+        </div>
+      </section>
+
+      <section class="canvas-wrap">
+        <input id="title" class="vis-title" placeholder="Visualisation sans titre">
+        <div id="canvas" class="canvas"></div>
+        <div id="empty" class="empty"></div>
+      </section>
+    </main>
+  </div>
+  </div>
+
+  <div id="popover" class="popover" hidden></div>
+
+  <dialog id="openDialog">
+    <form method="dialog">
+      <h3>Ouvrir une visualisation</h3>
+      <input id="openSearch" type="search" placeholder="Rechercher">
+      <ul id="openList" class="open-list"></ul>
+      <div class="dialog-actions"><button value="cancel" class="ghost">Fermer</button></div>
+    </form>
+  </dialog>
+
+  <div id="toast" class="toast" hidden></div>
+  <script src="app.js"></script>
+</body>
+</html>
