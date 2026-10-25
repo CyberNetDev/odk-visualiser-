@@ -1,0 +1,17 @@
+# Optional: run on the SAME server as ODK Central and talk to it over Docker's
+# internal network (no HTTPS hop, no public exposure needed).
+#
+#   docker network ls | grep central        # usually "central_default"
+#   docker compose -f docker-compose.yml -f docker-compose.central.yml up -d
+#
+# Users then sign in with server address  http://service:8383
+# (or set ODK_DEFAULT_URL=http://service:8383 and ODK_LOCK_URL=true in .env so they only type e-mail + password).
+# "service" is the ODK Central backend container, which serves /v1 on port 8383.
+services:
+  odk-visualizer:
+    networks: [default, central]
+
+networks:
+  central:
+    external: true
+    name: ${CENTRAL_NETWORK:-central_default}
