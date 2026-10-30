@@ -2,8 +2,11 @@
 // - Each user signs in from the app with THEIR OWN ODK Central account (server URL + e-mail + password).
 //   The password is sent once to Central and never stored; the server keeps only Central's session
 //   token in memory, linked to an HttpOnly cookie. Users see only the projects their account can see.
-// - Proxies the Central API / OData feed (avoids CORS), pages through results, caches them per user.
-// - Stores saved visualizations per ODK server in data/visualizations.json.
+// - Proxies the Central API / OData feed (avoids CORS) and pages through results.
+// - Caches heavy downloads (cache.js): memory + gzip files on disk, shared between users of the same
+//   ODK server after checking each user's access, stale-while-revalidate, incremental refresh
+//   (only new/edited submissions, via __system/updatedAt) and gzip/ETag responses.
+// - Stores saved visualizations and field transformations per ODK server in data/*.json.
 // - Serves the frontend from /public.
 // Every setting is optional (see .env.example): nothing is required to start the app.
 
@@ -13,11 +16,20 @@ const path = require('node:path');
 const crypto = require('node:crypto');
 const demo = require('./demo-data');
 const { extractLabels, csvChoices } = require('./xform');
+const zlib = require('node:zlib');
+const { DataCache, gunzip } = require('./cache');
 
 loadEnv(path.join(__dirname, '.env'));
 
 const PORT = Number(process.env.PORT || 3000);
+// Data cache: entries younger than CACHE_MINUTES are served as-is; older ones are served immediately
+// and refreshed in the background; beyond CACHE_MAX_STALE_HOURS the refresh is awaited.
 const CACHE_MINUTES = Number(process.env.CACHE_MINUTES || 5);
+const CACHE_MAX_STALE_HOURS = Number(process.env.CACHE_MAX_STALE_HOURS || 24);
+const CACHE_FULL_REFRESH_HOURS = Number(process.env.CACHE_FULL_REFRESH_HOURS || 12); // full reload even if deltas work
+const CACHE_PERSIST = !/^(0|false|no)$/i.test(process.env.CACHE_PERSIST || 'true');
+const CACHE_MEMORY_MB = Number(process.env.CACHE_MEMORY_MB || 256);
+const CACHE_DISK_MB = Number(process.env.CACHE_DISK_MB || 2048);
 const PAGE_SIZE = Number(process.env.PAGE_SIZE || 1000);
 // Pre-fill the server field on the login screen (ODK_URL kept for compatibility)
 const DEFAULT_SERVER = normalizeServer(process.env.ODK_DEFAULT_URL || process.env.ODK_URL || '');
@@ -33,6 +45,8 @@ const COOKIE = 'odkvis_sid';
 const PUBLIC_DIR = path.join(__dirname, 'public');
 const DATA_DIR = path.join(__dirname, 'data');
 const FAV_FILE = path.join(DATA_DIR, 'visualizations.json');
+const TRANSFORMS_FILE = path.join(DATA_DIR, 'transforms.json');
+const dataCache = new DataCache({ dir: process.env.CACHE_DIR || path.join(DATA_DIR, 'cache'), persist: CACHE_PERSIST, memoryMB: CACHE_MEMORY_MB, diskMB: CACHE_DISK_MB });
 
 // ---------------------------------------------------------------- env loader
 function loadEnv(file) {
@@ -185,16 +199,179 @@ async function fetchAllOData(sess, basePath, query) {
   return rows;
 }
 
-// ---------------------------------------------------------------- cache (per server + user, since permissions differ)
-const cache = new Map();
-async function cached(key, fn, force) {
-  const hit = cache.get(key);
-  if (!force && hit && Date.now() - hit.at < CACHE_MINUTES * 60_000) return hit;
+// ---------------------------------------------------------------- small per-user memo (labels, fields, tables, access checks)
+const memo = new Map();
+async function memoize(key, fn, ms = CACHE_MINUTES * 60_000) {
+  const hit = memo.get(key);
+  if (hit && Date.now() - hit.at < ms) return hit.value;
   const value = await fn();
-  const entry = { at: Date.now(), value };
-  cache.set(key, entry);
-  if (cache.size > 200) cache.delete(cache.keys().next().value);
-  return entry;
+  memo.set(key, { at: Date.now(), value });
+  if (memo.size > 1000) memo.delete(memo.keys().next().value);
+  return value;
+}
+
+// A user may read a cached form only if their own ODK account can open it (re-checked every 2 minutes)
+async function ensureAccess(sess, pid, fid) {
+  if (sess.demo) return;
+  await memoize(`${sess.server}|${sess.email}|access|${pid}|${fid}`, () => central(sess, `/v1/projects/${enc(pid)}/forms/${enc(fid)}`), 120_000);
+}
+
+const formNames = new Map(); // server|pid|fid -> form title (for the cache panel)
+const noDelta = new Set();   // servers that refused incremental queries (Central < 1.3)
+const scopeOf = sess => (sess.demo ? 'demo' : sess.server);
+
+function buildFilter(table, q) {
+  // On sub-tables (repeats) Central filters through the parent submission: $root/Submissions/__system/...
+  const sys = table === 'Submissions' ? '__system' : '$root/Submissions/__system';
+  const filters = [];
+  if (q.from) filters.push(`${sys}/submissionDate ge ${new Date(q.from).toISOString()}`);
+  if (q.to) filters.push(`${sys}/submissionDate lt ${new Date(new Date(q.to).getTime() + 86400000).toISOString()}`);
+  if (q.reviewState) {
+    const states = q.reviewState.split(',').filter(x => /^(null|received|hasIssues|edited|approved|rejected)$/.test(x));
+    if (states.length) filters.push('(' + states.map(x => x === 'null' || x === 'received' ? `${sys}/reviewState eq null` : `${sys}/reviewState eq '${x}'`).join(' or ') + ')');
+  }
+  return filters.join(' and ');
+}
+
+// Where the rows come from: ODK Central (OData) or the demo dataset
+function sourceFor(sess, pid, fid, params) {
+  if (sess.demo) {
+    return {
+      fetch: async table => ({ rows: demo.data(fid, table, params).rows, filtered: true }),
+      rootSig: async () => `total:${demo.data(fid, 'Submissions', {}).rows.length}`,
+      changedSince: async () => 0,
+      count: async () => demo.data(fid, 'Submissions', params).rows.length,
+      delta: null,
+    };
+  }
+  const svc = `/v1/projects/${enc(pid)}/forms/${enc(fid)}.svc`;
+  const count = async (table, filter) => {
+    const qs = new URLSearchParams({ $top: '1', $count: 'true' });
+    if (filter) qs.set('$filter', filter);
+    const r = await central(sess, `${svc}/${table}?${qs}`);
+    return r['@odata.count'] ?? (r.value || []).length;
+  };
+  const changed = iso => `(__system/submissionDate gt ${iso} or __system/updatedAt gt ${iso})`;
+  return {
+    async fetch(table, filter) {
+      try { return { rows: await fetchAllOData(sess, `${svc}/${table}`, filter ? { $filter: filter } : {}), filtered: true }; }
+      catch (e) {
+        // older Central versions don't support $root on sub-tables: load everything, the browser filters via the parent
+        if (!filter || table === 'Submissions' || e.status === 401 || e.status === 403) throw e;
+        return { rows: await fetchAllOData(sess, `${svc}/${table}`, {}), filtered: false };
+      }
+    },
+    // Fingerprint of the form: total + number of submissions per review state. Catches deletions and
+    // review-state changes, which a filter on __system/updatedAt may not reveal.
+    async rootSig() {
+      const states = ['null', "'received'", "'hasIssues'", "'edited'", "'approved'", "'rejected'"];
+      const [total, ...per] = await Promise.all([count('Submissions', ''), ...states.map(x => count('Submissions', `__system/reviewState eq ${x}`).catch(() => '?'))]);
+      return `total:${total};` + states.map((x, i) => `${x}:${per[i]}`).join(';');
+    },
+    changedSince: iso => count('Submissions', changed(iso)),
+    count,
+    delta: (filter, iso) => fetchAllOData(sess, `${svc}/Submissions`, { $filter: filter ? `(${filter}) and ${changed(iso)}` : changed(iso) }),
+  };
+}
+
+// Brings a cache entry up to date. mode 'auto': cheap check first (2 tiny count queries), then only the
+// new/edited submissions (main table) or a full reload (repeats, deletions...). mode 'full': full reload.
+function refreshEntry(key, ctx, mode = 'auto') {
+  return dataCache.once(key, async () => {
+    const { src, table, filter } = ctx;
+    const m = dataCache.meta(key);
+    const t0 = Date.now();
+    const full = async reason => {
+      const [res, rootSig] = await Promise.all([src.fetch(table, filter), src.rootSig().catch(() => null)]);
+      const ms = Date.now() - t0;
+      console.log(`cache: ${ctx.fid}/${table} chargement complet (${reason}) : ${res.rows.length} lignes en ${ms} ms`);
+      return dataCache.set(key, {
+        server: ctx.server, pid: ctx.pid, fid: ctx.fid, table, filter, params: ctx.params,
+        at: t0, dataAt: t0, fullAt: t0, rows: res.rows.length, rootSig, fetchMs: ms, mode: 'full',
+        last: { kind: 'full', reason, rows: res.rows.length, ms },
+      }, { rows: res.rows, filtered: res.filtered });
+    };
+    if (!m || mode === 'full') return full(m ? 'demandé' : 'premier chargement');
+    if (t0 - (m.fullAt || 0) > CACHE_FULL_REFRESH_HOURS * 3600e3) return full('rechargement complet périodique');
+    if (noDelta.has(ctx.server)) return full('serveur sans requêtes incrémentales');
+    const since = new Date((m.at || 0) - 120_000).toISOString(); // 2 min overlap: clock skew, uploads in progress
+    try {
+      const [changed, rootSig] = await Promise.all([src.changedSince(since), src.rootSig()]);
+      if (changed === 0 && rootSig === m.rootSig) {
+        return dataCache.touch(key, { at: t0, checks: (m.checks || 0) + 1, last: { kind: 'check', ms: Date.now() - t0 } });
+      }
+      if (table !== 'Submissions' || !src.delta || !changed) return full(changed ? `${changed} soumission(s) nouvelle(s) ou modifiée(s)` : 'suppression ou changement d\'état de revue');
+      const delta = await src.delta(filter, since);
+      const old = await dataCache.payload(key);
+      if (!old) return full('cache illisible');
+      const byId = new Map(old.rows.map(r => [r.__id, r]));
+      let added = 0, updated = 0;
+      for (const r of delta) { if (byId.has(r.__id)) updated++; else added++; byId.set(r.__id, r); }
+      const rows = [...byId.values()];
+      // deletions or rows leaving the filter (e.g. now "rejected") are invisible to a delta: verify the total
+      if ((await src.count('Submissions', filter)) !== rows.length) return full('suppression ou changement d\'état détecté');
+      const ms = Date.now() - t0;
+      console.log(`cache: ${ctx.fid}/${table} incrémental : +${added} nouvelles, ${updated} modifiées en ${ms} ms`);
+      return dataCache.set(key, { ...m, at: t0, dataAt: t0, rows: rows.length, rootSig, fetchMs: ms, mode: 'delta', last: { kind: 'delta', added, updated, ms } }, { rows, filtered: old.filtered });
+    } catch (e) {
+      if (e.status === 401 || e.status === 403) throw e;
+      if (e.status === 400 || e.status === 501) noDelta.add(ctx.server); // no filter on __system/updatedAt
+      return full('requête incrémentale refusée');
+    }
+  });
+}
+
+async function serveData(req, res, sess, pid, fid, q) {
+  const table = q.table || 'Submissions';
+  if (!/^[\w.\-]+$/.test(table)) throw httpError(400, 'Nom de table invalide');
+  await ensureAccess(sess, pid, fid);
+  const params = { from: q.from || '', to: q.to || '', reviewState: q.reviewState || '' };
+  const filter = buildFilter(table, params);
+  const scope = scopeOf(sess);
+  const key = DataCache.key([scope, String(pid), fid, table, filter]);
+  const ctx = { src: sourceFor(sess, pid, fid, params), table, filter, server: scope, pid: String(pid), fid, params };
+  let m = dataCache.meta(key), state;
+  const age = m ? Date.now() - m.at : Infinity;
+  if (q.refresh) { await refreshEntry(key, ctx, q.refresh === 'full' ? 'full' : 'auto'); state = 'refreshed'; }
+  else if (!m) { await refreshEntry(key, ctx); state = 'miss'; }
+  else if (age > CACHE_MAX_STALE_HOURS * 3600e3 || (age > CACHE_MINUTES * 60e3 && q.wait === '1')) { await refreshEntry(key, ctx); state = 'refreshed'; }
+  else if (age > CACHE_MINUTES * 60e3) {
+    refreshEntry(key, ctx).catch(e => console.warn('cache: actualisation en arrière-plan :', e.message));
+    state = 'stale';
+  } else if (q.wait === '1' && dataCache.inflight.has(key)) { await dataCache.inflight.get(key); state = 'refreshed'; }
+  else state = 'hit';
+  let buf = await dataCache.body(key);
+  if (!buf) { await refreshEntry(key, ctx, 'full'); buf = await dataCache.body(key); state = 'miss'; }
+  m = dataCache.meta(key);
+  const etag = `"${key.slice(0, 12)}-${m.version}"`;
+  const h = {
+    'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'private, no-cache', ETag: etag, Vary: 'Accept-Encoding, Cookie',
+    'X-Cache': state, 'X-Checked-At': String(m.at), 'X-Data-At': String(m.dataAt), 'X-Rows': String(m.rows),
+    'X-Refreshing': dataCache.inflight.has(key) ? '1' : '0', 'X-Cache-Key': key,
+  };
+  if (req.headers['if-none-match'] === etag) { res.writeHead(304, h); return res.end(); }
+  if (/\bgzip\b/.test(req.headers['accept-encoding'] || '')) {
+    res.writeHead(200, { ...h, 'Content-Encoding': 'gzip', 'Content-Length': buf.length });
+    return res.end(buf);
+  }
+  const raw = await gunzip(buf);
+  res.writeHead(200, { ...h, 'Content-Length': raw.length });
+  res.end(raw);
+}
+
+// Cache panel: entries of the user's ODK server, for projects the account can see
+async function cacheEntries(sess) {
+  const scope = scopeOf(sess);
+  const allowed = new Set((await api.projects(sess)).map(p => String(p.id)));
+  return [...dataCache.index.values()]
+    .filter(m => m.server === scope && allowed.has(String(m.pid)))
+    .map(m => ({
+      key: m.key, projectId: m.pid, formId: m.fid, formName: formNames.get(`${scope}|${m.pid}|${m.fid}`) || m.fid,
+      table: m.table, params: m.params || {}, rows: m.rows, bytes: m.bytes, rawBytes: m.rawBytes,
+      at: m.at, dataAt: m.dataAt, fullAt: m.fullAt, hits: m.hits || 0, checks: m.checks || 0, mode: m.mode,
+      fetchMs: m.fetchMs, last: m.last, lastAccess: m.lastAccess, refreshing: dataCache.inflight.has(m.key),
+    }))
+    .sort((a, b) => (b.lastAccess || 0) - (a.lastAccess || 0));
 }
 
 // ---------------------------------------------------------------- data source API
@@ -206,22 +383,24 @@ const api = {
   },
 
   async forms(sess, pid) {
-    if (sess.demo) return demo.forms(pid);
-    const list = await central(sess, `/v1/projects/${enc(pid)}/forms`);
-    return list.map(f => ({ id: f.xmlFormId, name: f.name || f.xmlFormId, submissions: f.submissions, state: f.state }));
+    const list = sess.demo
+      ? demo.forms(pid)
+      : (await central(sess, `/v1/projects/${enc(pid)}/forms`)).map(f => ({ id: f.xmlFormId, name: f.name || f.xmlFormId, submissions: f.submissions, state: f.state }));
+    for (const f of list) formNames.set(`${scopeOf(sess)}|${pid}|${f.id}`, f.name);
+    return list;
   },
 
   // Tables in the OData service: "Submissions" plus one per repeat group.
   async tables(sess, pid, fid) {
     if (sess.demo) return demo.tables(fid);
-    const xml = await central(sess, `/v1/projects/${enc(pid)}/forms/${enc(fid)}.svc/$metadata`, { raw: true });
+    const xml = await memoize(`${sess.server}|${sess.email}|meta|${pid}|${fid}`, () => central(sess, `/v1/projects/${enc(pid)}/forms/${enc(fid)}.svc/$metadata`, { raw: true }));
     const names = [...xml.matchAll(/<EntitySet\s+Name="([^"]+)"/g)].map(m => m[1]);
     return names.length ? names : ['Submissions'];
   },
 
   async fields(sess, pid, fid) {
     if (sess.demo) return demo.fields(fid);
-    const list = await central(sess, `/v1/projects/${enc(pid)}/forms/${enc(fid)}/fields?odata=true`);
+    const list = await memoize(`${sess.server}|${sess.email}|fields|${pid}|${fid}`, () => central(sess, `/v1/projects/${enc(pid)}/forms/${enc(fid)}/fields?odata=true`));
     return list
       .filter(f => f.type !== 'structure')
       .map(f => ({ path: f.path.replace(/^\//, ''), name: f.name, type: f.type, selectMultiple: !!f.selectMultiple, repeat: f.type === 'repeat' }));
@@ -230,7 +409,7 @@ const api = {
   // Question & choice labels from the XForm (+ CSV attachments for select_one_from_file / entity lists)
   async labels(sess, pid, fid) {
     const key = `${sess.server}|${sess.email}|labels|${pid}|${fid}`;
-    const hit = await cached(key, async () => {
+    return memoize(key, async () => {
       const xml = sess.demo ? demo.formXml(fid) : await central(sess, `/v1/projects/${enc(pid)}/forms/${enc(fid)}.xml`, { raw: true });
       const L = extractLabels(xml);
       for (const ex of L.externals) {
@@ -244,37 +423,7 @@ const api = {
       }
       delete L.externals;
       return L;
-    }, false);
-    return hit.value;
-  },
-
-  async data(sess, pid, fid, q) {
-    const table = q.table || 'Submissions';
-    if (!/^[\w.\-]+$/.test(table)) throw httpError(400, 'Nom de table invalide');
-    if (sess.demo) return demo.data(fid, table, q);
-    // On sub-tables (repeats) Central filters through the parent submission: $root/Submissions/__system/...
-    const sys = table === 'Submissions' ? '__system' : '$root/Submissions/__system';
-    const filters = [];
-    if (q.from) filters.push(`${sys}/submissionDate ge ${new Date(q.from).toISOString()}`);
-    if (q.to) filters.push(`${sys}/submissionDate lt ${new Date(new Date(q.to).getTime() + 86400000).toISOString()}`);
-    if (q.reviewState) {
-      const states = q.reviewState.split(',').filter(s => /^(null|received|hasIssues|edited|approved|rejected)$/.test(s));
-      if (states.length) filters.push('(' + states.map(s => s === 'null' || s === 'received' ? `${sys}/reviewState eq null` : `${sys}/reviewState eq '${s}'`).join(' or ') + ')');
-    }
-    const base = `/v1/projects/${enc(pid)}/forms/${enc(fid)}.svc/${table}`;
-    const load = async filter => {
-      const query = filter ? { $filter: filter } : {};
-      const key = `${sess.server}|${sess.email}|${pid}|${fid}|${table}|${filter}`;
-      return cached(key, () => fetchAllOData(sess, base, query), q.refresh === '1');
-    };
-    let hit, filtered = filters.length > 0;
-    try { hit = await load(filters.join(' and ')); }
-    catch (e) {
-      // older Central versions don't support $root on sub-tables: load everything, the browser filters via the parent
-      if (!filtered || table === 'Submissions' || e.status === 401 || e.status === 403) throw e;
-      hit = await load(''); filtered = false;
-    }
-    return { rows: hit.value, fetchedAt: hit.at, filtered };
+    });
   },
 };
 
@@ -290,12 +439,36 @@ function writeFavs(list) {
 }
 const favServer = v => v.server || 'demo';
 
+// Field transformations (derived fields, display formats), shared per form on the same ODK server
+function readTransforms() { try { return JSON.parse(fs.readFileSync(TRANSFORMS_FILE, 'utf8')); } catch { return []; } }
+function writeTransforms(list) {
+  fs.mkdirSync(DATA_DIR, { recursive: true });
+  fs.writeFileSync(TRANSFORMS_FILE + '.tmp', JSON.stringify(list, null, 2));
+  fs.renameSync(TRANSFORMS_FILE + '.tmp', TRANSFORMS_FILE);
+}
+const TRANSFORM_KINDS = ['number', 'bins', 'recode', 'text', 'date', 'datepart', 'duration', 'formula', 'display'];
+function cleanTransform(body) {
+  const t = { ...body };
+  for (const k of ['server', 'pid', 'fid', 'owner', 'ownerName', 'updatedAt', 'mine', 'local']) delete t[k];
+  if (!TRANSFORM_KINDS.includes(t.kind)) throw httpError(400, 'Type de transformation inconnu');
+  t.name = String(t.name || '').slice(0, 120);
+  if (JSON.stringify(t).length > 64000) throw httpError(413, 'Transformation trop volumineuse');
+  return t;
+}
+
 // ---------------------------------------------------------------- http plumbing
 function httpError(status, message) { const e = new Error(message); e.status = status; return e; }
 
 function send(res, status, body, type = 'application/json; charset=utf-8') {
-  res.writeHead(status, { 'Content-Type': type, 'Cache-Control': 'no-store' });
-  res.end(type.startsWith('application/json') ? JSON.stringify(body) : body);
+  const data = type.startsWith('application/json') ? JSON.stringify(body) : body;
+  const h = { 'Content-Type': type, 'Cache-Control': 'no-store', Vary: 'Accept-Encoding' };
+  if (typeof data === 'string' && data.length > 16384 && /\bgzip\b/.test(res.req?.headers['accept-encoding'] || '')) {
+    const gz = zlib.gzipSync(data);
+    res.writeHead(status, { ...h, 'Content-Encoding': 'gzip', 'Content-Length': gz.length });
+    return res.end(gz);
+  }
+  res.writeHead(status, h);
+  res.end(data);
 }
 
 async function readBody(req) {
@@ -375,7 +548,58 @@ const server = http.createServer(async (req, res) => {
     if ((m = p.match(/^\/api\/projects\/([^/]+)\/forms\/([^/]+)\/tables$/))) return send(res, 200, await api.tables(sess, m[1], decodeURIComponent(m[2])));
     if ((m = p.match(/^\/api\/projects\/([^/]+)\/forms\/([^/]+)\/fields$/))) return send(res, 200, await api.fields(sess, m[1], decodeURIComponent(m[2])));
     if ((m = p.match(/^\/api\/projects\/([^/]+)\/forms\/([^/]+)\/labels$/))) return send(res, 200, await api.labels(sess, m[1], decodeURIComponent(m[2])));
-    if ((m = p.match(/^\/api\/projects\/([^/]+)\/forms\/([^/]+)\/data$/))) return send(res, 200, await api.data(sess, m[1], decodeURIComponent(m[2]), q));
+    if ((m = p.match(/^\/api\/projects\/([^/]+)\/forms\/([^/]+)\/data$/))) return await serveData(req, res, sess, m[1], decodeURIComponent(m[2]), q);
+
+    // Field transformations of a form: readable by anyone who can open the form, editable by their author
+    if ((m = p.match(/^\/api\/projects\/([^/]+)\/forms\/([^/]+)\/transforms(?:\/([\w-]{6,64}))?$/))) {
+      const [pid, fid, id] = [m[1], decodeURIComponent(m[2]), m[3]];
+      await ensureAccess(sess, pid, fid);
+      const scope = scopeOf(sess);
+      const list = readTransforms();
+      const mine = t => ({ ...t, mine: t.owner === sess.email });
+      const same = t => t.server === scope && String(t.pid) === String(pid) && t.fid === fid;
+      if (!id && req.method === 'GET') return send(res, 200, list.filter(same).map(mine));
+      if (!id && req.method === 'POST') {
+        const t = cleanTransform(await readBody(req));
+        if (!/^[\w-]{6,64}$/.test(t.id || '') || list.some(x => x.id === t.id)) t.id = crypto.randomUUID();
+        const item = { ...t, server: scope, pid: String(pid), fid, owner: sess.email, ownerName: sess.name, updatedAt: new Date().toISOString() };
+        list.push(item); writeTransforms(list);
+        return send(res, 201, mine(item));
+      }
+      const i = list.findIndex(t => t.id === id && same(t));
+      if (i < 0) return send(res, 404, { error: 'Transformation introuvable' });
+      if (list[i].owner !== sess.email) return send(res, 403, { error: `Seul son auteur (${list[i].ownerName || list[i].owner}) peut modifier ou supprimer ce champ. Créez-en une copie.` });
+      if (req.method === 'PUT') {
+        const t = cleanTransform(await readBody(req));
+        list[i] = { ...t, id, server: scope, pid: String(pid), fid, owner: sess.email, ownerName: sess.name, updatedAt: new Date().toISOString() };
+        writeTransforms(list); return send(res, 200, mine(list[i]));
+      }
+      if (req.method === 'DELETE') { list.splice(i, 1); writeTransforms(list); return send(res, 200, { ok: true }); }
+    }
+
+    // Data cache panel
+    if (p === '/api/cache' && req.method === 'GET') {
+      return send(res, 200, {
+        settings: { freshMinutes: CACHE_MINUTES, maxStaleHours: CACHE_MAX_STALE_HOURS, fullRefreshHours: CACHE_FULL_REFRESH_HOURS, incremental: !noDelta.has(scopeOf(sess)) },
+        totals: dataCache.totals(), entries: await cacheEntries(sess),
+      });
+    }
+    if (p === '/api/cache' && req.method === 'DELETE') {
+      const keys = new Set((await cacheEntries(sess)).filter(e => !e.refreshing).map(e => e.key));
+      return send(res, 200, { deleted: dataCache.clear(x => keys.has(x.key)) });
+    }
+    if ((m = p.match(/^\/api\/cache\/([0-9a-f]{32})(\/refresh)?$/))) {
+      const meta = dataCache.meta(m[1]);
+      if (!meta || meta.server !== scopeOf(sess)) return send(res, 404, { error: 'Entrée de cache introuvable' });
+      await ensureAccess(sess, meta.pid, meta.fid);
+      if (m[2] && req.method === 'POST') {
+        const body = await readBody(req);
+        const ctx = { src: sourceFor(sess, meta.pid, meta.fid, meta.params || {}), table: meta.table, filter: meta.filter, server: meta.server, pid: meta.pid, fid: meta.fid, params: meta.params || {} };
+        await refreshEntry(m[1], ctx, body.full ? 'full' : 'auto');
+        return send(res, 200, (await cacheEntries(sess)).find(e => e.key === m[1]) || {});
+      }
+      if (!m[2] && req.method === 'DELETE') { dataCache.delete(m[1]); return send(res, 200, { ok: true }); }
+    }
 
     // Saved visualizations: visible to everyone connected to the same ODK server, editable by their owner.
     if (p === '/api/visualizations') {
@@ -413,9 +637,14 @@ const server = http.createServer(async (req, res) => {
   }
 });
 
+// never let a stray promise take the whole server down
+process.on('unhandledRejection', e => console.error('Erreur non gérée :', e && e.message ? e.message : e));
+
 for (const sig of ['SIGTERM', 'SIGINT']) process.on(sig, () => server.close(() => process.exit(0)));
 
 server.listen(PORT, () => {
   console.log(`ODK Visualizer running on http://localhost:${PORT}`);
   console.log(LOCK_SERVER ? `Login limited to ${DEFAULT_SERVER}` : 'Users sign in to their ODK Central server from the app');
+  const t = dataCache.totals();
+  console.log(`Cache: ${CACHE_PERSIST ? `disque (${t.entries} entrées, ${(t.diskBytes / 1048576).toFixed(1)} Mo)` : 'mémoire seulement'}, frais ${CACHE_MINUTES} min, max ${CACHE_MEMORY_MB} Mo en mémoire`);
 });

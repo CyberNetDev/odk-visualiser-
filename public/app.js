@@ -57,6 +57,13 @@ let fields = [];         // fields usable for the current table (incl. joined pa
 let fieldMap = new Map();
 let tables = [];         // OData tables of the form
 let labels = null;       // { languages, defaultLang, fields, choices } from the XForm
+let transforms = [];     // field transformations of the form (derived fields + display formats)
+let compiled = new Map();      // transform id -> { fn, type, order, multi, refs } | { error }
+let displayFormats = new Map(); // labelPath -> number display format
+let memoStore = new Map();     // transform id -> WeakMap(row -> value)
+let pendingTransforms = null;  // snapshot carried by an opened visualization
+let dataStatus = null;         // cache headers of the last load
+let loadSeq = 0;
 let data = [];           // rows of the current table (with __parent links for repeats)
 let chart = null, map = null;
 let lastResult = null, lastFiltered = [];
@@ -92,7 +99,32 @@ function toast(msg, err = false) {
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
 
 // ------------------------------------------------------------------ labels (XLSForm) & field helpers
-const get = (obj, path) => path.split('/').reduce((o, k) => (o == null ? undefined : o[k]), obj);
+// Value of a path in a row. "__f/<id>" is a derived (transformed) field, computed on the row it is
+// attached to — so "__parent/__f/<id>" computes a parent-table transformation on the parent row.
+function get(obj, path) {
+  const segs = path.split('/');
+  let o = obj;
+  for (let i = 0; i < segs.length; i++) {
+    if (o == null) return undefined;
+    if (segs[i] === '__f') return derivedValue(o, segs[i + 1]);
+    o = o[segs[i]];
+  }
+  return o;
+}
+let derivedDepth = 0;
+function derivedValue(row, id) {
+  const c = compiled.get(id);
+  if (!c || !c.fn) return undefined;
+  let wm = memoStore.get(id);
+  if (!wm) memoStore.set(id, (wm = new WeakMap()));
+  if (wm.has(row)) return wm.get(row);
+  if (derivedDepth > 25) return null; // circular references
+  derivedDepth++;
+  let v;
+  try { v = c.fn(row); } catch { v = null; } finally { derivedDepth--; }
+  wm.set(row, v);
+  return v;
+}
 const rawLabels = () => state.options.lang === '__raw';
 function pick(map) {
   if (!map || rawLabels()) return null;
@@ -114,6 +146,7 @@ const TYPE_TAG = { num: ['123', 'num'], date: ['DATE', 'date'], multi: ['MULTI',
 
 function fieldLabel(f) {
   if (!f) return '';
+  if (f.derived) return f.derived.name || 'Champ transformé';
   if (f.system) return f.name;
   return pick(labels?.fields?.[f.labelPath]) || tidy(f.name);
 }
@@ -122,6 +155,8 @@ function valueLabel(dim, v) {
   const f = dim && fieldMap.get(dim.path);
   if (!f) return tidy(v);
   if (kindOf(f) === 'date') return v;
+  if (kindOf(f) === 'num') return fieldFormat(f) ? fmtField(f, Number(v)) : (f.derived ? String(v) : tidy(v));
+  if (f.derived) return String(v);
   const ch = choicesOf(f);
   const one = x => (ch && pick(ch[x])) || tidy(x);
   if (f.selectMultiple && dim.split === false) return String(v).split(/\s+/).filter(Boolean).map(one).join(', ');
@@ -144,8 +179,8 @@ function isoWeek(d) {
   return `${t.getUTCFullYear()}-S${String(Math.ceil(((t - y0) / 86400000 + 1) / 7)).padStart(2, '0')}`;
 }
 function periodKey(v, p) {
-  const d = new Date(v.length === 10 ? v + 'T00:00:00Z' : v);
-  if (isNaN(d)) return EMPTY;
+  const d = ODKT.toDate(v); // wall-clock date/time as recorded on the device
+  if (!d) return EMPTY;
   const y = d.getUTCFullYear(), m = d.getUTCMonth() + 1;
   switch (p) {
     case 'day': return d.toISOString().slice(0, 10);
@@ -163,6 +198,7 @@ function dimValues(row, dim) {
   let out;
   if (v == null || v === '') out = [EMPTY];
   else if (kindOf(f) === 'date') out = [periodKey(String(v), dim.period || 'month')];
+  else if (Array.isArray(v)) out = v.length ? v.map(String) : [EMPTY];
   else if (f && f.selectMultiple && dim.split !== false) out = String(v).split(/\s+/).filter(Boolean);
   else if (typeof v === 'object') out = [JSON.stringify(v)];
   else out = [String(v)];
@@ -175,7 +211,12 @@ const numVal = path => r => { const x = get(r, path); if (x == null || x === '')
 
 // Order keys like the form: choice order from the XLSForm, otherwise natural order; (vide) last
 function compareKeys(dims) {
-  const orders = dims.map(d => { const ch = choicesOf(fieldMap.get(d.path)); return ch ? Object.keys(ch) : null; });
+  const orders = dims.map(d => {
+    const f = fieldMap.get(d.path);
+    if (f?.order) return f.order;
+    const ch = choicesOf(f);
+    return ch ? Object.keys(ch) : null;
+  });
   const natural = (a, b) => a.localeCompare(b, 'fr', { numeric: true });
   return (A, B) => {
     const a = String(A).split(SEP), b = String(B).split(SEP);
@@ -299,8 +340,13 @@ function measureLabel() {
   return { count: 'Nombre', pct: '% du total', sum: `Somme · ${name}`, avg: `Moyenne · ${name}`, min: `Min. · ${name}`, max: `Max. · ${name}` }[agg];
 }
 const fmtNum = v => v == null || isNaN(v) ? '' : Number.isInteger(v) ? v.toLocaleString('fr-FR') : v.toLocaleString('fr-FR', { maximumFractionDigits: 2 });
-const fmt = v => v == null ? '' : state.measure.agg === 'pct' ? v.toLocaleString('fr-FR', { maximumFractionDigits: 1 }) + ' %' : fmtNum(v);
-const fmtCompact = v => Math.abs(v) >= 1e6 ? (v / 1e6).toLocaleString('fr-FR', { maximumFractionDigits: 1 }) + ' M' : Math.abs(v) >= 1e4 ? (v / 1e3).toLocaleString('fr-FR', { maximumFractionDigits: 0 }) + ' k' : fmt(v);
+// display format of a field (set in the formatter); null = default
+const fieldFormat = f => { if (!f) return null; const x = f.derived ? f.derived.format : displayFormats.get(f.labelPath); return x && Object.values(x).some(v => v !== '' && v != null && v !== false && v !== 1) ? x : null; };
+const fmtField = (f, v) => { const x = fieldFormat(f); return x ? ODKT.formatNumber(v, x) : fmtNum(v); };
+const axisField = f => v => { const x = fieldFormat(f); return x ? ODKT.formatNumber(v, x, true) : fmtCompact(v); };
+const measureFormat = () => (['count', 'pct'].includes(state.measure.agg) ? null : fieldFormat(fieldMap.get(state.measure.field)));
+const fmt = v => { if (v == null) return ''; if (state.measure.agg === 'pct') return v.toLocaleString('fr-FR', { maximumFractionDigits: 1 }) + ' %'; const x = measureFormat(); return x ? ODKT.formatNumber(v, x) : fmtNum(v); };
+const fmtCompact = v => { const x = measureFormat(); if (x) return ODKT.formatNumber(v, x, true); return Math.abs(v) >= 1e6 ? (v / 1e6).toLocaleString('fr-FR', { maximumFractionDigits: 1 }) + ' M' : Math.abs(v) >= 1e4 ? (v / 1e3).toLocaleString('fr-FR', { maximumFractionDigits: 0 }) + ' k' : fmt(v); };
 function niceCeil(x) { if (!(x > 0)) return 1; const p = 10 ** Math.floor(Math.log10(x)); return Math.ceil(x / p) * p; }
 function niceStep(x) { if (!(x > 0)) return 1; const p = 10 ** Math.floor(Math.log10(x)); const f = x / p; return (f <= 1 ? 1 : f <= 2 ? 2 : f <= 2.5 ? 2.5 : f <= 5 ? 5 : 10) * p; }
 
@@ -629,15 +675,16 @@ function renderBoxplot(canvas) {
   setOption({
     tooltip: {
       trigger: 'item', formatter: p => {
-        if (p.seriesType === 'scatter') return `${esc(cats[p.value[0]])}<br>Valeur atypique : <b>${fmtNum(p.value[1])}</b>`;
+        const F = v => fmtField(fieldMap.get(field), v);
+        if (p.seriesType === 'scatter') return `${esc(cats[p.value[0]])}<br>Valeur atypique : <b>${F(p.value[1])}</b>`;
         const d = p.data; if (!d.value.length) return '';
-        return `${esc(p.name)}${g.colKeys.length > 1 ? SEP + esc(p.seriesName) : ''}<br>Max : ${fmtNum(d.value[4])}<br>Q3 : ${fmtNum(d.value[3])}<br><b>Médiane : ${fmtNum(d.value[2])}</b><br>Q1 : ${fmtNum(d.value[1])}<br>Min : ${fmtNum(d.value[0])}<br>Moyenne : ${fmtNum(d.mean)} · n = ${d.n.toLocaleString('fr-FR')}`;
+        return `${esc(p.name)}${g.colKeys.length > 1 ? SEP + esc(p.seriesName) : ''}<br>Max : ${F(d.value[4])}<br>Q3 : ${F(d.value[3])}<br><b>Médiane : ${F(d.value[2])}</b><br>Q1 : ${F(d.value[1])}<br>Min : ${F(d.value[0])}<br>Moyenne : ${F(d.mean)} · n = ${d.n.toLocaleString('fr-FR')}`;
       },
     },
     legend: legendBottom(g.colKeys.length > 1),
     grid: { left: 12, right: 24, top: 24, bottom: g.colKeys.length > 1 ? 44 : 16, containLabel: true },
     xAxis: { type: 'category', data: cats, axisLabel: { interval: 0, rotate: cats.length > 8 ? 40 : 0, width: 140, overflow: 'truncate' } },
-    yAxis: { type: 'value', name: fieldLabel(fieldMap.get(field)), nameTextStyle: { align: 'left' }, scale: true, axisLabel: { formatter: v => fmtCompact(v) } },
+    yAxis: { type: 'value', name: fieldLabel(fieldMap.get(field)), nameTextStyle: { align: 'left' }, scale: true, axisLabel: { formatter: axisField(fieldMap.get(field)) } },
     series,
   });
 }
@@ -656,7 +703,8 @@ function renderHistogram(canvas) {
   if (ints && max - min <= 40) { step = 1; start = min; }
   else { const k = Math.min(30, Math.max(6, Math.ceil(Math.log2(all.length) + 1))); step = niceStep((max - min) / k || 1); start = Math.floor(min / step) * step; }
   const nb = Math.max(1, Math.floor((max - start) / step) + 1);
-  const binLabels = Array.from({ length: nb }, (_, i) => ints && step === 1 ? fmtNum(start + i) : `${fmtNum(start + i * step)} – ${fmtNum(start + (i + 1) * step)}`);
+  const F = v => fmtField(fieldMap.get(field), v);
+  const binLabels = Array.from({ length: nb }, (_, i) => ints && step === 1 ? F(start + i) : `${F(start + i * step)} – ${F(start + (i + 1) * step)}`);
   const series = g.rowKeys.map(k => {
     const counts = new Array(nb).fill(0);
     for (const v of g.cell(k, '')) counts[Math.min(nb - 1, Math.floor((v - start) / step))]++;
@@ -706,11 +754,11 @@ function renderScatter(canvas) {
   const xl = fieldLabel(fieldMap.get(xd.path)), yl = fieldLabel(fieldMap.get(yField));
   makeChart(canvas);
   setOption({
-    tooltip: { trigger: 'item', formatter: p => `${esc(p.seriesName)}<br>${esc(xl)} : <b>${fmtNum(p.value[0])}</b><br>${esc(yl)} : <b>${fmtNum(p.value[1])}</b>` },
+    tooltip: { trigger: 'item', formatter: p => `${esc(p.seriesName)}<br>${esc(xl)} : <b>${fmtField(fieldMap.get(xd.path), p.value[0])}</b><br>${esc(yl)} : <b>${fmtField(fieldMap.get(yField), p.value[1])}</b>` },
     legend: legendBottom(true),
     grid: { left: 16, right: 28, top: 36, bottom: 60, containLabel: true },
-    xAxis: { type: 'value', name: xl, nameLocation: 'middle', nameGap: 28, scale: true, axisLabel: { formatter: v => fmtCompact(v) } },
-    yAxis: { type: 'value', name: yl, nameTextStyle: { align: 'left' }, scale: true, axisLabel: { formatter: v => fmtCompact(v) } },
+    xAxis: { type: 'value', name: xl, nameLocation: 'middle', nameGap: 28, scale: true, axisLabel: { formatter: axisField(fieldMap.get(xd.path)) } },
+    yAxis: { type: 'value', name: yl, nameTextStyle: { align: 'left' }, scale: true, axisLabel: { formatter: axisField(fieldMap.get(yField)) } },
     series,
   });
 }
@@ -889,8 +937,10 @@ function openDimPopover(zone, i, anchor) {
       return `<label><input type="checkbox" value="${esc(v)}" ${sel.has(v) ? 'checked' : ''}> <span>${esc(lab)}${lab !== v && v !== EMPTY && !rawLabels() ? ` <code>${esc(v)}</code>` : ''}</span><span class="n">${n.toLocaleString('fr-FR')}</span></label>`;
     }).join('')}</div>
     <div class="row"><span><button class="link" id="pAll">Tout</button> · <button class="link" id="pNone">Aucun</button></span>
-      <span><button class="ghost" id="pCancel">Annuler</button> <button id="pApply">Appliquer</button></span></div>`;
+      <span><button class="ghost" id="pCancel">Annuler</button> <button id="pApply">Appliquer</button></span></div>
+    ${kindOf(f) !== 'geo' && fieldMap.has(d.path) ? `<div class="row"><button class="link" id="pFormat">ƒ ${f.derived ? 'Modifier la transformation' : 'Formater / transformer ce champ'}…</button></div>` : ''}`;
   place(pop, anchor);
+  if ($('#pFormat', pop)) $('#pFormat', pop).onclick = () => { pop.hidden = true; openFormatter(f.derived ? { def: f.derived } : { field: f }); };
   $('#pSearch', pop).addEventListener('input', e => {
     const q = e.target.value.toLowerCase();
     $$('.vals label', pop).forEach(l => (l.hidden = !l.textContent.toLowerCase().includes(q)));
@@ -914,10 +964,16 @@ function openAddPopover(path, anchor) {
     <button class="ghost" data-z="columns">Ajouter aux Colonnes</button>
     <button class="ghost" data-z="rows">Ajouter aux Lignes</button>
     <button class="ghost" data-z="filters">Ajouter au Filtre</button>
-    ${kindOf(f) === 'num' ? '<button class="ghost" data-z="measure">Utiliser comme Valeur</button>' : ''}</div>`;
+    ${kindOf(f) === 'num' ? '<button class="ghost" data-z="measure">Utiliser comme Valeur</button>' : ''}
+    <hr>
+    ${f.derived ? '<button class="ghost" data-z="edit">ƒ Modifier la transformation…</button><button class="ghost danger" data-z="delete">Supprimer ce champ</button>'
+      : kindOf(f) === 'geo' ? '' : '<button class="ghost" data-z="format">ƒ Formater / transformer…</button>'}</div>`;
   place(pop, anchor);
   $$('[data-z]', pop).forEach(b => (b.onclick = () => {
     pop.hidden = true;
+    if (b.dataset.z === 'format') return openFormatter({ field: f });
+    if (b.dataset.z === 'edit') return openFormatter({ def: f.derived });
+    if (b.dataset.z === 'delete') return deleteTransform(f.derived);
     if (b.dataset.z === 'measure') {
       const agg = visDef().raw || !['count', 'pct'].includes(state.measure.agg) ? state.measure.agg : 'sum';
       state.measure = { agg, field: path }; render();
@@ -941,7 +997,8 @@ document.addEventListener('mousedown', e => {
 // ------------------------------------------------------------------ field list
 function groupOf(f) {
   let own;
-  if (f.system) own = 'Métadonnées de soumission';
+  if (f.derived) own = 'ƒ Champs transformés';
+  else if (f.system) own = 'Métadonnées de soumission';
   else {
     const segs = f.labelPath.split('/').slice(0, -1);
     // the repeat prefix of the field's own table is not a sub-group
@@ -970,7 +1027,10 @@ function renderFieldList() {
     const li = document.createElement('li');
     li.draggable = true; li.title = `${lab}\n${f.name}${f.parentTable ? ' — champ de « ' + tableLabel(f.parentTable) + ' »' : ''}`;
     if (used.has(f.path)) li.className = 'used';
-    li.innerHTML = `<span class="ftype ${cls}">${tag}</span><span class="fname">${esc(lab)}</span>`;
+    if (f.derived) li.classList.add('derived');
+    if (f.derived && compiled.get(f.derived.id)?.error) li.title += `\n⚠ ${compiled.get(f.derived.id).error}`;
+    const fmtMark = !f.derived && displayFormats.has(f.labelPath) ? '<span class="fmark" title="Format d\'affichage personnalisé">#</span>' : '';
+    li.innerHTML = `<span class="ftype ${cls}">${tag}</span><span class="fname">${f.derived ? '<i>ƒ</i> ' : ''}${esc(lab)}</span>${fmtMark}${f.derived?.local ? '<span class="fmark" title="Restauré depuis la visualisation, pas encore enregistré pour le formulaire">●</span>' : ''}`;
     li.addEventListener('dragstart', e => e.dataTransfer.setData('text/plain', JSON.stringify({ path: f.path })));
     li.addEventListener('click', () => openAddPopover(f.path, li));
     ul.appendChild(li);
@@ -1052,7 +1112,8 @@ function bindControls() {
   $('#from').onchange = e => { state.from = e.target.value; loadData(); };
   $('#to').onchange = e => { state.to = e.target.value; loadData(); };
   $('#reviewState').onchange = e => { state.reviewState = e.target.value; loadData(); };
-  $('#btnRefresh').onclick = () => loadData(true);
+  $('#btnRefresh').onclick = e => loadData(e.shiftKey ? 'full' : true);
+  $('#btnCalc').onclick = () => (state.formId ? openFormatter({}) : toast('Choisissez d\'abord un formulaire', true));
 
   $('#btnNew').onclick = () => {
     const keep = { projectId: state.projectId, formId: state.formId, table: state.table, options: { ...blankState().options, lang: state.options.lang } };
@@ -1089,11 +1150,18 @@ async function loadForms() {
 async function loadForm() {
   if (!state.formId) { data = []; fields = []; tables = []; labels = null; render(); return; }
   const base = `/api/projects/${state.projectId}/forms/${encodeURIComponent(state.formId)}`;
-  const [tbls, flds, lbl] = await Promise.all([
+  const [tbls, flds, lbl, trs] = await Promise.all([
     api(base + '/tables'), api(base + '/fields'),
     api(base + '/labels').catch(e => { console.warn('Libellés indisponibles :', e.message); return null; }),
+    api(base + '/transforms').catch(e => { console.warn('Transformations indisponibles :', e.message); return []; }),
   ]);
-  tables = tbls; allFields = flds; labels = lbl;
+  tables = tbls; allFields = flds; labels = lbl; transforms = trs;
+  // transformations carried by an opened visualization but missing from the form's library
+  if (pendingTransforms && pendingTransforms.formId === state.formId) {
+    for (const t of pendingTransforms.list) if (!transforms.some(x => x.id === t.id)) transforms.push({ ...t, local: true, mine: true });
+  }
+  pendingTransforms = null;
+  compileTransforms();
   if (!tables.includes(state.table)) state.table = 'Submissions';
   renderLangOptions();
   renderTableOptions();
@@ -1104,59 +1172,525 @@ async function loadForm() {
 // Ancestors of a repeat table, root first: Submissions.a.b → [Submissions, Submissions.a]
 const ancestorsOf = t => tables.filter(x => x !== t && (x === 'Submissions' || t.startsWith(x + '.'))).sort((a, b) => a.length - b.length);
 
-// Fields of the current table + (for repeats) the fields of every parent table, reachable through __parent/
-function setFieldsForTable() {
+// Fields as seen from a table: its own fields + (for repeats) the fields of every parent table,
+// reachable through __parent/, + derived (transformed) fields of each level.
+function baseFieldsOf(t) {
   const repeats = allFields.filter(f => f.repeat).map(f => f.path);
   const owner = p => repeats.filter(r => p.startsWith(r + '/')).sort((a, b) => b.length - a.length)[0] || '';
-  const direct = t => {
-    const pre = t === 'Submissions' ? '' : repeatPath(t);
-    const list = allFields.filter(f => !f.repeat && owner(f.path) === pre)
-      .map(f => ({ ...f, path: pre ? f.path.slice(pre.length + 1) : f.path, labelPath: f.path, tablePrefix: pre }));
-    return t === 'Submissions' ? [...list, ...SYSTEM_FIELDS.map(f => ({ ...f, labelPath: f.path }))] : list;
-  };
-  fields = direct(state.table);
+  const pre = t === 'Submissions' ? '' : repeatPath(t);
+  const list = allFields.filter(f => !f.repeat && owner(f.path) === pre)
+    .map(f => ({ ...f, path: pre ? f.path.slice(pre.length + 1) : f.path, labelPath: f.path, tablePrefix: pre }));
+  return t === 'Submissions' ? [...list, ...SYSTEM_FIELDS.map(f => ({ ...f, labelPath: f.path }))] : list;
+}
+function derivedFieldsOf(t) {
+  const pre = t === 'Submissions' ? '' : repeatPath(t);
+  return transforms.filter(d => d.kind !== 'display' && (d.table || 'Submissions') === t).map(d => {
+    const c = compiled.get(d.id) || {};
+    return { path: '__f/' + d.id, name: d.name, type: c.type || 'string', derived: d, selectMultiple: !!c.multi, order: c.order, labelPath: null, tablePrefix: pre };
+  });
+}
+function buildFields(table, withDerived = true) {
+  const list = [...baseFieldsOf(table), ...(withDerived ? derivedFieldsOf(table) : [])];
   let prefix = '';
-  for (const t of ancestorsOf(state.table).reverse()) {
+  for (const t of ancestorsOf(table).reverse()) {
     prefix += '__parent/';
-    fields.push(...direct(t).map(f => ({ ...f, path: prefix + f.path, parentTable: t })));
+    list.push(...[...baseFieldsOf(t), ...(withDerived ? derivedFieldsOf(t) : [])].map(f => ({ ...f, path: prefix + f.path, parentTable: t })));
   }
+  return list;
+}
+function setFieldsForTable() {
+  fields = buildFields(state.table);
   fieldMap = new Map(fields.map(f => [f.path, f]));
 }
 
-async function fetchTable(table, refresh) {
+// ------------------------------------------------------------------ field transformations (formateur)
+// ctx used to compile a transformation defined on table t: resolves ${name} and knows the source field
+function transformCtx(def) {
+  const table = def.table || 'Submissions';
+  const list = buildFields(table);
+  const byPath = new Map(list.map(f => [f.path, f]));
+  const src = byPath.get(def.source);
+  return {
+    get,
+    resolve: name => {
+      const own = list.filter(f => !f.parentTable);
+      const hit = own.find(f => f.name === name) || own.find(f => f.path === name) || list.find(f => f.name === name) || list.find(f => f.path === name)
+        || list.find(f => f.derived && f.derived.name === name);
+      return hit ? hit.path : null;
+    },
+    sourceIsInteger: src ? (src.type === 'int' || (src.derived && compiled.get(src.derived.id)?.type === 'int')) : false,
+    sourceIsMulti: !!(src && src.selectMultiple),
+    labelOf: (path, v) => { const f = byPath.get(path); if (!f) return v; const saveMap = fieldMap; fieldMap = byPath; try { return valueLabel({ path }, v); } finally { fieldMap = saveMap; } },
+  };
+}
+function compileTransforms() {
+  compiled = new Map(); memoStore = new Map(); displayFormats = new Map();
+  for (const d of transforms) if (d.kind === 'display' && d.source) displayFormats.set(d.source, d.format || {});
+  const defs = transforms.filter(d => d.kind !== 'display');
+  // compile in dependency order: a formula may use another transformed field
+  const pending = new Set(defs.map(d => d.id));
+  const compileOne = (d, seen = new Set()) => {
+    if (!pending.has(d.id)) return;
+    if (seen.has(d.id)) { compiled.set(d.id, { error: 'référence circulaire' }); pending.delete(d.id); return; }
+    seen.add(d.id);
+    const deps = [d.source, ...((d.opts?.expr || '').match(/__f\/[\w-]+/g) || [])].filter(p => p && p.includes('__f/')).map(p => p.split('__f/').pop());
+    for (const id of deps) { const dep = defs.find(x => x.id === id); if (dep) compileOne(dep, seen); }
+    // provisional entry so that fields of this table know the types of already compiled transforms
+    try { compiled.set(d.id, ODKT.compile(d, transformCtx(d))); }
+    catch (e) { compiled.set(d.id, { error: e.message }); }
+    pending.delete(d.id);
+  };
+  for (const d of defs) compileOne(d);
+}
+
+async function saveTransform(def, { copy = false } = {}) {
+  const base = `/api/projects/${state.projectId}/forms/${encodeURIComponent(state.formId)}/transforms`;
+  const body = JSON.stringify({ ...def, local: undefined, mine: undefined, ...(copy ? { id: undefined } : {}) });
+  const existing = !copy && transforms.find(t => t.id === def.id && !t.local);
+  const saved = existing ? await api(`${base}/${def.id}`, { method: 'PUT', body }) : await api(base, { method: 'POST', body });
+  transforms = [...transforms.filter(t => t.id !== def.id && t.id !== saved.id), saved];
+  compileTransforms(); setFieldsForTable(); render();
+  return saved;
+}
+
+async function deleteTransform(def) {
+  if (!def) return;
+  const users = transforms.filter(t => t.id !== def.id && (t.source?.endsWith('__f/' + def.id) || (t.opts?.expr || '').includes(def.id)));
+  if (!confirm(`Supprimer le champ « ${def.name} » ?${users.length ? `\n\nAttention : ${users.length} autre(s) champ(s) transformé(s) l'utilisent.` : ''}`)) return;
+  try {
+    if (!def.local) await api(`/api/projects/${state.projectId}/forms/${encodeURIComponent(state.formId)}/transforms/${def.id}`, { method: 'DELETE' });
+  } catch (e) { return toast(e.message, true); }
+  transforms = transforms.filter(t => t.id !== def.id);
+  const gone = p => p.endsWith('__f/' + def.id);
+  for (const z of ['columns', 'rows', 'filters']) state[z] = state[z].filter(d => !gone(d.path));
+  if (gone(state.measure.field || '')) state.measure = { agg: 'count', field: '' };
+  compileTransforms(); setFieldsForTable(); render();
+  toast(`Champ « ${def.name} » supprimé`);
+}
+
+const FX_DECIMAL_DEFAULT = { number: '', duration: 0, formula: 2 };
+// Opens the formatter: { field } to transform a field, { def } to edit a transformation, {} for a calculated field
+function openFormatter({ field = null, def = null } = {}) {
+  const dlg = $('#fmtDialog');
+  const editing = !!def;
+  const table = def ? def.table || 'Submissions' : state.table;
+  if (def && table !== state.table && !fieldMap.has('__parent/__f/' + def.id) && !fieldMap.has('__f/' + def.id)) return toast('Ouvrez la table de ce champ pour le modifier.', true);
+  const tableFields = buildFields(table);
+  const byPath = new Map(tableFields.map(f => [f.path, f]));
+  if (def && def.kind === 'display') field = tableFields.find(f => f.labelPath === def.source && !f.parentTable) || tableFields.find(f => f.labelPath === def.source);
+  else if (def && def.source) field = byPath.get(def.source) || null;
+  const srcKind = field ? kindOf(field) : null;
+  const kinds = !field ? ['formula']
+    : srcKind === 'num' ? (field.derived ? ['bins', 'recode', 'number', 'formula'] : ['display', 'bins', 'number', 'recode', 'formula'])
+    : srcKind === 'date' ? ['datepart', 'duration', 'formula']
+    : srcKind === 'sel' || srcKind === 'multi' ? ['recode', 'text', 'formula']
+    : ['text', 'number', 'date', 'recode', 'datepart', 'duration', 'formula'];
+  const existingDisplay = field && !field.derived ? transforms.find(t => t.kind === 'display' && t.source === field.labelPath) : null;
+  const cur = def ? JSON.parse(JSON.stringify(def)) : { id: null, kind: kinds[0], table, source: field?.path || null, name: '', opts: {}, format: {} };
+  if (!def && cur.kind === 'display' && existingDisplay) Object.assign(cur, JSON.parse(JSON.stringify(existingDisplay)));
+  const L = field ? fieldLabel(field) : '';
+  const dateFields = tableFields.filter(f => kindOf(f) === 'date' && f.path !== cur.source);
+  const subPath = tableFields.find(f => f.path.endsWith('__system/submissionDate'))?.path;
+
+  dlg.innerHTML = `<form method="dialog" class="fmt-form">
+    <header><h3>ƒ Formateur de champ</h3>
+      <div class="fx-src">${field ? `Champ source : <b>${esc(L)}</b> <code>${esc(field.name)}</code> · ${esc(TYPE_TAG[srcKind][0])}${field.parentTable ? ' · ↑ ' + esc(tableLabel(field.parentTable)) : ''}` : `Nouveau champ calculé sur la table <b>${esc(tableLabel(table))}</b>`}</div></header>
+    <div class="fmt-body">
+      <div class="fmt-left">
+        <label>Transformation <select id="fxKind">${kinds.map(k => `<option value="${k}">${esc(ODKT.KINDS[k])}</option>`).join('')}</select></label>
+        <div id="fxOpts"></div>
+        <fieldset id="fxFormatBox"><legend>Format d'affichage du nombre</legend>
+          <div class="fx-grid">
+            <label>Décimales <select id="fxDec"><option value="">auto</option>${[0, 1, 2, 3, 4].map(n => `<option value="${n}">${n}</option>`).join('')}</select></label>
+            <label>Échelle <select id="fxScale"><option value="1">aucune</option><option value="1000">milliers (k)</option><option value="1000000">millions (M)</option><option value="auto">automatique</option></select></label>
+            <label>Préfixe <input id="fxPrefix" placeholder="ex. $"></label>
+            <label>Suffixe / unité <input id="fxSuffix" placeholder="ex. FCFA, kg, ans"></label>
+          </div>
+          <label class="inline"><input type="checkbox" id="fxPct"> Pourcentage (× 100, ajoute %)</label>
+          <label class="inline"><input type="checkbox" id="fxThousands" checked> Séparateur de milliers</label>
+        </fieldset>
+        <label id="fxNameWrap">Nom du nouveau champ <input id="fxName" maxlength="120" placeholder="ex. Âge (classes)"></label>
+      </div>
+      <div class="fmt-right">
+        <h4>Aperçu sur les données chargées</h4>
+        <div id="fxStats" class="fx-stats"></div>
+        <div class="fx-table-wrap"><table id="fxPreview" class="fx-table"></table></div>
+        <div id="fxDist" class="fx-dist"></div>
+        <p id="fxError" class="fx-error" hidden></p>
+      </div>
+    </div>
+    <footer>
+      ${editing && cur.kind !== 'display' ? '<button type="button" id="fxDelete" class="ghost danger">Supprimer</button>' : ''}
+      ${editing && cur.kind === 'display' ? '<button type="button" id="fxReset" class="ghost danger">Revenir au format par défaut</button>' : ''}
+      ${cur.kind === 'display' || !editing ? '' : `<span class="fx-owner">${def.local ? 'Restauré depuis la visualisation' : def.mine ? '' : 'Créé par ' + esc(def.ownerName || def.owner || '')}</span>`}
+      <span class="grow"></span>
+      <button value="cancel" class="ghost">Annuler</button>
+      <button type="button" id="fxSave">${editing ? 'Enregistrer' : 'Créer le champ'}</button>
+    </footer></form>`;
+  $('#fxKind', dlg).value = cur.kind;
+  $('#fxKind', dlg).disabled = editing;
+
+  // ---- per-kind option panels
+  const o = () => cur.opts || (cur.opts = {});
+  const distinct = () => (field ? distinctValues({ path: field.path, values: null }) : []);
+  const panels = {
+    display: () => `<p class="fx-help">Change seulement l'affichage des valeurs de ce champ (graphiques, tableaux, info-bulles). Les données ne sont pas modifiées.</p>`,
+    number: () => `<p class="fx-help">Convertit des valeurs (texte ou nombre) en nombre : « 1 234,5 », « 12 % », « 3000 FCFA »…</p>
+      <div class="fx-grid">
+        <label>Séparateur décimal <select data-o="decimalComma"><option value="auto">automatique</option><option value="yes">virgule (1 234,5)</option><option value="no">point (1,234.5)</option></select></label>
+        <label>Arrondir à <select data-o="round"><option value="">ne pas arrondir</option>${[0, 1, 2, 3].map(n => `<option value="${n}">${n} décimale(s)</option>`).join('')}</select></label>
+        <label>Multiplier par <input data-o="multiply" placeholder="1"></label>
+        <label>Ajouter <input data-o="add" placeholder="0"></label>
+      </div>
+      <label class="inline"><input type="checkbox" data-o="emptyAsZero"> Valeurs vides = 0</label>`,
+    bins: () => `<p class="fx-help">Range les nombres dans des classes, qui deviennent des catégories ordonnées.</p>
+      <label>Méthode <select data-o="mode"><option value="breaks">Bornes personnalisées</option><option value="width">Classes de même largeur</option></select></label>
+      <div data-show="breaks"><label>Bornes (séparées par des virgules) <input data-o="breaks" placeholder="5, 15, 50"></label>
+        <p class="fx-help">« 5, 15, 50 » donne : &lt; 5 · 5 – 14 · 15 – 49 · 50 et +</p></div>
+      <div data-show="width" class="fx-grid"><label>Largeur <input data-o="width" placeholder="10"></label><label>Début <input data-o="start" placeholder="0"></label><label>Nombre de classes <input data-o="count" placeholder="10"></label></div>
+      <label>Libellés personnalisés (facultatif, séparés par |) <input data-o="labels" placeholder="Enfant | Adolescent | Adulte | Senior"></label>
+      <label class="inline"><input type="checkbox" data-o="integer"> Valeurs entières (classes « 5 – 14 » au lieu de « 5 – &lt; 15 »)</label>`,
+    recode: () => {
+      const vals = distinct().slice(0, 300);
+      const groups = [...new Set(Object.values(o().map || {}))];
+      return `<p class="fx-help">Donnez un nom de groupe aux valeurs à regrouper (même nom = même groupe). L'ordre des groupes suit leur première apparition.</p>
+        <div class="fx-row"><button type="button" class="link" id="fxUseLabels">Remplir avec les libellés</button> · <button type="button" class="link" id="fxClearMap">Tout vider</button></div>
+        <div class="fx-map">${vals.map(([v, n]) => v === EMPTY ? '' : `<label class="fx-map-row"><span class="fx-map-v" title="${esc(v)}">${esc(valueLabel({ path: field.path }, v))}${valueLabel({ path: field.path }, v) !== v ? ` <code>${esc(v)}</code>` : ''}</span><span class="n">${n.toLocaleString('fr-FR')}</span><input data-map="${esc(v)}" list="fxGroups" placeholder="groupe…" value="${esc((o().map || {})[v] || '')}"></label>`).join('')}</div>
+        <datalist id="fxGroups">${groups.map(g => `<option value="${esc(g)}">`).join('')}</datalist>
+        <div class="fx-grid"><label>Valeurs non regroupées <select data-o="others"><option value="keep">gardées telles quelles</option><option value="other">regroupées dans « Autre »</option><option value="empty">ignorées (vides)</option></select></label>
+        <label data-show-o="others=other">Nom du groupe « autre » <input data-o="otherLabel" placeholder="Autre"></label></div>`;
+    },
+    text: () => `<p class="fx-help">Nettoie un texte libre : utile pour regrouper « NIAMEY », « niamey » et « Niamey ».</p>
+      <div class="fx-grid">
+        <label>Casse <select data-o="case"><option value="none">inchangée</option><option value="title">Première Lettre De Chaque Mot</option><option value="sentence">Première lettre de la phrase</option><option value="upper">MAJUSCULES</option><option value="lower">minuscules</option></select></label>
+        <label>Garder les N premiers caractères <input data-o="first" type="number" min="0" placeholder="tous"></label>
+      </div>
+      <label class="inline"><input type="checkbox" data-o="trim" checked> Supprimer les espaces au début et à la fin</label>
+      <label class="inline"><input type="checkbox" data-o="collapse" checked> Remplacer les espaces multiples par un seul</label>
+      <label class="inline"><input type="checkbox" data-o="accents"> Supprimer les accents (é → e)</label>
+      <div class="fx-grid"><label>Remplacer <input data-r="0.find" placeholder="texte ou motif"></label><label>par <input data-r="0.by" placeholder="(rien)"></label></div>
+      <label class="inline"><input type="checkbox" data-r="0.regex"> Le motif est une expression régulière</label>
+      <label>Extraire (expression régulière, 1ᵉʳ groupe) <input data-o="extract" placeholder="ex. (\\d+)"></label>
+      <label class="inline"><input type="checkbox" data-o="asCategory" checked> Traiter le résultat comme une catégorie</label>`,
+    date: () => `<p class="fx-help">Transforme un texte en date, utilisable ensuite par jour, semaine, mois…</p>
+      <label>Format du texte <select data-o="format"><option value="auto">détection automatique</option><option value="DD/MM/YYYY">JJ/MM/AAAA (25/12/2025)</option><option value="MM/DD/YYYY">MM/JJ/AAAA (12/25/2025)</option><option value="YYYY-MM-DD">AAAA-MM-JJ (2025-12-25)</option><option value="unix">horodatage Unix (secondes)</option><option value="unixms">horodatage Unix (millisecondes)</option><option value="excel">nombre de jours Excel</option></select></label>
+      <label class="inline"><input type="checkbox" data-o="keepTime"> Garder l'heure</label>`,
+    datepart: () => `<label>Partie à extraire <select data-o="part">${Object.entries(ODKT.DATE_PARTS).map(([k, p]) => `<option value="${k}">${esc(p.label)}</option>`).join('')}</select></label>
+      <p class="fx-help">Les jours, mois et trimestres sont classés dans l'ordre du calendrier.</p>`,
+    duration: () => `<p class="fx-help">Calcule un âge à partir d'une date de naissance, ou une durée (par ex. la durée de l'entretien entre « start » et « end »).</p>
+      <div class="fx-grid">
+        <label>Jusqu'à <select data-o="toChoice"><option value="today">aujourd'hui</option>${dateFields.map(f => `<option value="${esc(f.path)}">${f.parentTable ? '↑ ' : ''}${esc(fieldLabel(f))}</option>`).join('')}</select></label>
+        <label>Unité <select data-o="unit">${Object.entries(ODKT.UNITS).map(([k, l]) => `<option value="${k}">${l}</option>`).join('')}</select></label>
+        <label>Décimales <select data-o="decimals">${[0, 1, 2].map(n => `<option value="${n}">${n}${n ? '' : ' (valeur entière)'}</option>`).join('')}</select></label>
+      </div>
+      <label class="inline"><input type="checkbox" data-o="abs"> Valeur absolue (ignorer le sens)</label>`,
+    formula: () => `<p class="fx-help">Écrivez un calcul avec les champs entre <code>\${nom}</code>, comme dans un XLSForm. Exemples :<br>
+      <code>\${monthly_income} / \${hh_size}</code> · <code>if(\${head_sex} = "female", 1, 0)</code> · <code>selected(\${illnesses}, "malaria")</code> · <code>round(\${head_age} / 10) * 10</code></p>
+      <textarea data-o="expr" rows="4" spellcheck="false" placeholder="\${champ_a} + \${champ_b}"></textarea>
+      <div class="fx-grid">
+        <label>Insérer un champ <select id="fxInsField"><option value="">—</option>${tableFields.filter(f => kindOf(f) !== 'geo' && f.path !== '__f/' + cur.id).map(f => `<option value="${esc(f.derived || f.parentTable || !/^[\w.-]+$/.test(f.name) || tableFields.filter(x => x.name === f.name).length > 1 ? '{' + f.path + '}' : '${' + f.name + '}')}">${f.parentTable ? '↑ ' : ''}${f.derived ? 'ƒ ' : ''}${esc(fieldLabel(f))}</option>`).join('')}</select></label>
+        <label>Insérer une fonction <select id="fxInsFn"><option value="">—</option>${ODKT.FUNCTIONS.map(fn => `<option>${fn}</option>`).join('')}</select></label>
+        <label>Type du résultat <select data-o="output"><option value="number">nombre</option><option value="category">catégorie</option><option value="text">texte</option><option value="date">date</option></select></label>
+      </div>
+      <p class="fx-help">Opérateurs : + − * / % ^ · comparaisons = != &lt; &gt; &lt;= &gt;= · and, or, not · &amp; concatène du texte. Une valeur vide rend le résultat vide (sauf coalesce, if, concat…).</p>`,
+  };
+
+  const fillPanel = () => {
+    cur.kind = $('#fxKind', dlg).value;
+    $('#fxOpts', dlg).innerHTML = panels[cur.kind]();
+    const numericOut = ['display', 'number', 'duration'].includes(cur.kind) || (cur.kind === 'formula' && (o().output || 'number') === 'number');
+    $('#fxFormatBox', dlg).hidden = !numericOut;
+    $('#fxNameWrap', dlg).hidden = cur.kind === 'display';
+    // defaults
+    if (cur.kind === 'bins') { o().mode ||= 'breaks'; if (o().integer == null) o().integer = field?.type === 'int'; }
+    if (cur.kind === 'recode') o().others ||= 'keep';
+    if (cur.kind === 'text') { for (const k of ['trim', 'collapse', 'asCategory']) if (o()[k] == null) o()[k] = true; o().case ||= 'none'; }
+    if (cur.kind === 'datepart') o().part ||= 'month';
+    if (cur.kind === 'duration') { o().unit ||= 'years'; if (o().decimals == null) o().decimals = 0; if (!o().toChoice) o().toChoice = o().to === 'today' ? 'today' : o().toField || subPath || 'today'; }
+    if (cur.kind === 'formula') o().output ||= 'number';
+    if (cur.kind === 'number') o().decimalComma ||= 'auto';
+    // controls <- cur.opts
+    $$('[data-o]', dlg).forEach(el => {
+      const v = o()[el.dataset.o];
+      if (el.type === 'checkbox') el.checked = !!v; else if (v != null) el.value = v;
+    });
+    $$('[data-r]', dlg).forEach(el => {
+      const [i, k] = el.dataset.r.split('.'); const r = (o().replace || [])[i] || {};
+      if (el.type === 'checkbox') el.checked = !!r[k]; else el.value = r[k] ?? '';
+    });
+    showHide();
+    if (cur.kind === 'recode') {
+      $('#fxUseLabels', dlg).onclick = () => { $$('[data-map]', dlg).forEach(i => { if (!i.value) i.value = valueLabel({ path: field.path }, i.dataset.map); }); readUI(); preview(); };
+      $('#fxClearMap', dlg).onclick = () => { $$('[data-map]', dlg).forEach(i => (i.value = '')); readUI(); preview(); };
+    }
+    if (cur.kind === 'formula') {
+      const ta = $('textarea[data-o=expr]', dlg);
+      const insert = t => { const p = ta.selectionStart ?? ta.value.length; ta.value = ta.value.slice(0, p) + t + ta.value.slice(ta.selectionEnd ?? p); ta.focus(); ta.selectionStart = ta.selectionEnd = p + t.length; readUI(); preview(); };
+      $('#fxInsField', dlg).onchange = e => { if (e.target.value) insert(e.target.value); e.target.value = ''; };
+      $('#fxInsFn', dlg).onchange = e => { if (e.target.value) insert(e.target.value + '()'); e.target.value = ''; };
+    }
+    if (!cur.name || cur._autoName) { cur.name = defaultName(); cur._autoName = true; }
+    $('#fxName', dlg).value = cur.name;
+  };
+  const showHide = () => {
+    $$('[data-show]', dlg).forEach(el => (el.hidden = (o().mode || 'breaks') !== el.dataset.show));
+    $$('[data-show-o]', dlg).forEach(el => { const [k, v] = el.dataset.showO.split('='); el.hidden = o()[k] !== v; });
+    const numericOut = ['display', 'number', 'duration'].includes(cur.kind) || (cur.kind === 'formula' && (o().output || 'number') === 'number');
+    $('#fxFormatBox', dlg).hidden = !numericOut;
+  };
+  const defaultName = () => {
+    const unitL = ODKT.UNITS[o().unit || 'years'];
+    switch (cur.kind) {
+      case 'number': return `${L} (nombre)`;
+      case 'bins': return `${L} (classes)`;
+      case 'recode': return `${L} (regroupé)`;
+      case 'text': return `${L} (texte nettoyé)`;
+      case 'date': return `${L} (date)`;
+      case 'datepart': return `${L} — ${(ODKT.DATE_PARTS[o().part || 'month'].label).replace(/\s*\(.*\)/, '').toLowerCase()}`;
+      case 'duration': return /naiss|birth|dob|ddn/i.test(field?.name + L) ? 'Âge (années)' : `Durée en ${unitL} (${L})`;
+      case 'formula': return 'Champ calculé';
+      default: return L;
+    }
+  };
+  // UI -> cur
+  const readUI = () => {
+    $$('[data-o]', dlg).forEach(el => { o()[el.dataset.o] = el.type === 'checkbox' ? el.checked : el.value; });
+    if (cur.kind === 'text') {
+      const r = {}; $$('[data-r]', dlg).forEach(el => { const k = el.dataset.r.split('.')[1]; r[k] = el.type === 'checkbox' ? el.checked : el.value; });
+      o().replace = r.find ? [r] : [];
+    }
+    if (cur.kind === 'recode') {
+      const map = {}, order = [];
+      $$('[data-map]', dlg).forEach(i => { const g = i.value.trim(); if (g) { map[i.dataset.map] = g; if (!order.includes(g)) order.push(g); } });
+      o().map = map; o().order = order;
+      $('#fxGroups', dlg).innerHTML = order.map(g => `<option value="${esc(g)}">`).join('');
+    }
+    if (cur.kind === 'duration') { o().to = o().toChoice === 'today' ? 'today' : 'field'; o().toField = o().toChoice === 'today' ? null : o().toChoice; }
+    if (cur.kind === 'bins' && o().integer === false && field?.type !== 'int') { /* keep */ }
+    cur.format = { decimals: $('#fxDec', dlg).value, scale: $('#fxScale', dlg).value === 'auto' ? 'auto' : Number($('#fxScale', dlg).value), prefix: $('#fxPrefix', dlg).value, suffix: $('#fxSuffix', dlg).value, percent: $('#fxPct', dlg).checked, thousands: $('#fxThousands', dlg).checked };
+    const nm = $('#fxName', dlg).value.trim();
+    if (nm !== cur.name) { cur.name = nm; cur._autoName = false; }
+    if (cur._autoName) { cur.name = defaultName(); $('#fxName', dlg).value = cur.name; }
+    showHide();
+  };
+  // format controls <- cur.format
+  const F = cur.format || {};
+  $('#fxDec', dlg).value = F.decimals ?? (FX_DECIMAL_DEFAULT[cur.kind] ?? '');
+  $('#fxScale', dlg).value = F.scale === 'auto' ? 'auto' : String(F.scale || 1);
+  $('#fxPrefix', dlg).value = F.prefix || ''; $('#fxSuffix', dlg).value = F.suffix || (cur.kind === 'duration' && !def ? '' : '');
+  $('#fxPct', dlg).checked = !!F.percent; $('#fxThousands', dlg).checked = F.thousands !== false;
+  if (def) cur._autoName = false;
+
+  // ---- live preview
+  let timer = null;
+  const preview = () => {
+    clearTimeout(timer);
+    timer = setTimeout(() => {
+      const err = $('#fxError', dlg); err.hidden = true;
+      let c = null;
+      try {
+        if (cur.kind === 'display') c = { type: 'decimal', fn: r => numVal(field.path)(r) };
+        else {
+          if (cur.kind === 'formula' && !String(o().expr || '').trim()) throw new Error('Écrivez une formule.');
+          if (cur.kind === 'bins' && (o().mode || 'breaks') === 'breaks' && !String(o().breaks || '').trim()) throw new Error('Indiquez au moins une borne, par ex. « 5, 15, 50 ».');
+          c = ODKT.compile({ ...cur, id: cur.id || '__preview' }, transformCtx({ ...cur, table }));
+        }
+      } catch (e) { err.hidden = false; err.textContent = '⚠ ' + e.message; $('#fxPreview', dlg).innerHTML = ''; $('#fxStats', dlg).textContent = ''; $('#fxDist', dlg).innerHTML = ''; return; }
+      // rows of the current table, seen from the transformation's table
+      const prefix = '__parent/'.repeat(Math.max(0, ancestorsOf(state.table).length - ancestorsOf(table).length));
+      const rowsOf = prefix ? data.map(r => prefix.split('/').filter(Boolean).reduce(o2 => o2 && o2.__parent, r)).filter(Boolean) : data;
+      const uniq = [...new Set(rowsOf)].slice(0, 20000);
+      const srcVal = r => (cur.source ? get(r, cur.source) : null);
+      const fmtOut = v => {
+        if (v == null || v === '' || (Array.isArray(v) && !v.length)) return '<span class="muted">(vide)</span>';
+        if (Array.isArray(v)) return esc(v.join(', '));
+        if (['int', 'decimal'].includes(c.type)) return esc(ODKT.formatNumber(v, cur.format || {}));
+        return esc(String(v));
+      };
+      let ok = 0, emptySrc = 0, failed = 0, min = Infinity, max = -Infinity, sum = 0, cnt = 0;
+      const dist = new Map(), samples = [], seen = new Set();
+      for (const r of uniq) {
+        let v; try { v = c.fn(r); } catch { v = null; }
+        const s0 = srcVal(r);
+        const empty = v == null || v === '' || (Array.isArray(v) && !v.length) || (typeof v === 'number' && isNaN(v));
+        if (cur.source && (s0 == null || s0 === '')) emptySrc++;
+        else if (empty) failed++; else ok++;
+        if (!empty) {
+          if (typeof v === 'number') { min = Math.min(min, v); max = Math.max(max, v); sum += v; cnt++; }
+          else for (const x of Array.isArray(v) ? v : [v]) dist.set(String(x), (dist.get(String(x)) || 0) + 1);
+        }
+        const k = JSON.stringify(s0) + '|' + JSON.stringify(v);
+        if (samples.length < 12 && !seen.has(k) && (s0 != null || !cur.source)) { seen.add(k); samples.push([s0, v, r]); }
+      }
+      const N = uniq.length;
+      $('#fxStats', dlg).innerHTML = `<b>${N.toLocaleString('fr-FR')}</b> lignes · <span class="okc">${ok.toLocaleString('fr-FR')} transformées</span>${cur.source ? ` · ${emptySrc.toLocaleString('fr-FR')} vides` : ''}${failed ? ` · <span class="bad">${failed.toLocaleString('fr-FR')} non reconnues</span>` : ''}`
+        + (cnt ? `<br>min ${esc(ODKT.formatNumber(min, cur.format || {}))} · moyenne ${esc(ODKT.formatNumber(sum / cnt, cur.format || {}))} · max ${esc(ODKT.formatNumber(max, cur.format || {}))}` : '');
+      const srcCell = s0 => (s0 == null || s0 === '' ? '<span class="muted">(vide)</span>' : field && ['sel', 'multi'].includes(srcKind) ? esc(String(s0).split(/\s+/).map(x => valueLabel({ path: field.path, split: false }, x)).join(', ')) + ` <code>${esc(s0)}</code>` : esc(typeof s0 === 'object' ? JSON.stringify(s0) : s0));
+      const refsHead = cur.kind === 'formula' ? 'Champs utilisés' : `Valeur d'origine`;
+      const refCell = r => cur.kind === 'formula' ? esc((c.refs || []).map(p => `${(tableFields.find(f => f.path === p)?.name) || p} = ${get(r, p) ?? '∅'}`).join(' · ')) : srcCell(get(r, cur.source));
+      $('#fxPreview', dlg).innerHTML = `<thead><tr><th>${refsHead}</th><th></th><th>Résultat</th></tr></thead><tbody>` +
+        samples.map(([, v, r]) => `<tr><td>${refCell(r)}</td><td class="arrow">→</td><td>${fmtOut(v)}</td></tr>`).join('') + '</tbody>';
+      const top = [...dist].sort((a, b) => {
+        if (c.order) { const ia = c.order.indexOf(a[0]), ib = c.order.indexOf(b[0]); if (ia >= 0 || ib >= 0) return (ia < 0 ? 1e9 : ia) - (ib < 0 ? 1e9 : ib); }
+        return b[1] - a[1];
+      }).slice(0, 14);
+      $('#fxDist', dlg).innerHTML = top.length ? `<div class="fx-dist-h">${dist.size.toLocaleString('fr-FR')} valeur(s) distincte(s)${dist.size > 14 ? ' · les 14 premières' : ''}</div>` + top.map(([k, n]) => `<span class="fx-chip">${esc(k)} <b>${n.toLocaleString('fr-FR')}</b></span>`).join('') : '';
+    }, 120);
+  };
+
+  fillPanel();
+  readUI();
+  dlg.oninput = e => { if (e.target.id === 'fxKind') return; readUI(); preview(); };
+  dlg.onchange = e => { if (e.target.id === 'fxKind') { cur.opts = {}; cur._autoName = true; fillPanel(); readUI(); } else readUI(); preview(); };
+  $('#fxSave', dlg).onclick = async () => {
+    readUI();
+    if (!$('#fxError', dlg).hidden) return toast('Corrigez d\'abord la transformation.', true);
+    const out = { id: cur.id || undefined, kind: cur.kind, table, source: cur.source, name: cur.name || defaultName(), opts: cur.opts, format: cur.format };
+    if (cur.kind === 'display') { out.source = field.labelPath; out.name = `Format : ${L}`; out.id = existingDisplay?.id || cur.id || undefined; }
+    if (out.kind === 'duration') delete out.opts.toChoice;
+    try {
+      const copy = editing && def && !def.mine && !def.local;
+      if (copy && !confirm(`Ce champ a été créé par ${def.ownerName || def.owner}. Enregistrer vos changements dans une copie ?`)) return;
+      const saved = await saveTransform(out.kind === 'display' && existingDisplay && !existingDisplay.mine ? { ...out, id: undefined } : out, { copy });
+      dlg.close();
+      toast(out.kind === 'display' ? `Format d'affichage appliqué à « ${L} »` : `Champ « ${saved.name} » ${editing && !copy ? 'mis à jour' : 'créé'} — il est dans « ƒ Champs transformés »`);
+    } catch (e) { toast(e.message, true); }
+  };
+  if ($('#fxDelete', dlg)) $('#fxDelete', dlg).onclick = () => { dlg.close(); deleteTransform(def); };
+  if ($('#fxReset', dlg)) $('#fxReset', dlg).onclick = async () => {
+    try { await api(`/api/projects/${state.projectId}/forms/${encodeURIComponent(state.formId)}/transforms/${def.id}`, { method: 'DELETE' }); }
+    catch (e) { return toast(e.message, true); }
+    transforms = transforms.filter(t => t.id !== def.id); compileTransforms(); setFieldsForTable(); render(); dlg.close();
+  };
+  dlg.showModal();
+  preview();
+}
+
+async function fetchTable(table, { refresh = '', wait = false } = {}) {
   const p = new URLSearchParams({ table });
   if (state.from) p.set('from', state.from);
   if (state.to) p.set('to', state.to);
   if (state.reviewState) p.set('reviewState', state.reviewState);
-  if (refresh) p.set('refresh', '1');
-  return api(`/api/projects/${state.projectId}/forms/${encodeURIComponent(state.formId)}/data?${p}`);
+  if (refresh) p.set('refresh', refresh);
+  if (wait) p.set('wait', '1');
+  const url = `/api/projects/${state.projectId}/forms/${encodeURIComponent(state.formId)}/data?${p}`;
+  const res = await fetch(url, { headers: { 'Content-Type': 'application/json' } });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    if (res.status === 401 && body.relogin) showLogin(body.error || 'Session expirée, reconnectez-vous.', 'info');
+    const err = new Error(body.error || `Erreur (${res.status})`); err.status = res.status; throw err;
+  }
+  const body = await res.json();
+  const h = k => res.headers.get(k);
+  return { table, rows: body.rows, filtered: body.filtered, state: h('X-Cache') || 'hit', checkedAt: Number(h('X-Checked-At')) || Date.now(), dataAt: Number(h('X-Data-At')) || Date.now(), refreshing: h('X-Refreshing') === '1', key: h('X-Cache-Key') };
 }
 
 // Loads the current table and, for a repeat, its parent tables; each row gets row.__parent = its parent row.
 // Rows whose parent is missing (e.g. outside the date filter) are dropped.
-async function loadData(refresh = false) {
+// Data may come straight from the server cache; if it was stale, the server refreshes it in the background
+// and a second, silent request picks up the new version.
+async function loadData(refresh = false, { wait = false, silent = false } = {}) {
   if (!state.formId) return;
-  $('#rowCount').textContent = 'Chargement…';
+  const seq = ++loadSeq;
+  if (!silent) { $('#rowCount').textContent = refresh === 'full' ? 'Rechargement complet…' : refresh ? 'Actualisation…' : 'Chargement…'; }
+  else $('#cacheState').className = 'cache-state busy';
   try {
     const chain = [...ancestorsOf(state.table), state.table];
-    const results = await Promise.all(chain.map(t => fetchTable(t, refresh)));
-    let parents = null, rows = [];
-    results.forEach((res, k) => {
-      rows = res.rows;
-      if (k > 0) {
-        const key = rows.length ? Object.keys(rows[0]).find(x => x !== '__id' && /^__.+-id$/.test(x)) : null;
-        if (key) rows = rows.filter(r => { const p = parents.get(r[key]); if (!p) return false; r.__parent = p; return true; });
-      }
-      parents = new Map(rows.map(r => [r.__id, r]));
-    });
-    data = rows;
-    const when = new Date(Math.min(...results.map(r => r.fetchedAt))).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
-    const unit = state.table === 'Submissions' ? 'soumissions' : `lignes « ${tableLabel(state.table)} »`;
-    $('#rowCount').textContent = `${data.length.toLocaleString('fr-FR')} ${unit} · ${when}`;
+    const results = await Promise.all(chain.map(t => fetchTable(t, { refresh: refresh === 'full' ? 'full' : refresh ? '1' : '', wait })));
+    if (seq !== loadSeq) return; // a newer request superseded this one
+    const unchanged = silent && dataStatus && results.every((r, i) => dataStatus.results[i] && r.key === dataStatus.results[i].key && r.dataAt === dataStatus.results[i].dataAt);
+    dataStatus = { results, at: Date.now() };
+    if (!unchanged) {
+      let parents = null, rows = [];
+      results.forEach((res, k) => {
+        rows = res.rows;
+        if (k > 0) {
+          const key = rows.length ? Object.keys(rows[0]).find(x => x !== '__id' && /^__.+-id$/.test(x)) : null;
+          if (key) rows = rows.filter(r => { const p = parents.get(r[key]); if (!p) return false; r.__parent = p; return true; });
+        }
+        parents = new Map(rows.map(r => [r.__id, r]));
+      });
+      data = rows;
+      memoStore = new Map(); // derived values are memoized per row object
+    }
+    renderStatus();
+    if (!unchanged) render();
+    if (!silent && results.some(r => r.refreshing || r.state === 'stale')) loadData(false, { wait: true, silent: true });
+    if (refresh) {
+      const r = results[results.length - 1];
+      toast(r.state === 'refreshed' ? 'Données à jour' : 'Données chargées');
+    }
   } catch (e) {
-    data = []; $('#rowCount').textContent = 'Échec du chargement'; if (e.status !== 401) toast(e.message, true);
+    if (seq !== loadSeq) return;
+    if (!silent) { data = []; $('#rowCount').textContent = 'Échec du chargement'; render(); }
+    if (e.status !== 401) toast(e.message, true);
   }
-  render();
+}
+
+const hhmm = t => new Date(t).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+function renderStatus() {
+  if (!dataStatus) return;
+  const rs = dataStatus.results;
+  const unit = state.table === 'Submissions' ? 'soumissions' : `lignes « ${tableLabel(state.table)} »`;
+  const checked = Math.min(...rs.map(r => r.checkedAt)), changed = Math.max(...rs.map(r => r.dataAt));
+  const st = rs.some(r => r.refreshing || r.state === 'stale') ? 'busy' : rs.some(r => r.state === 'hit') ? 'cached' : 'fresh';
+  $('#rowCount').innerHTML = `${data.length.toLocaleString('fr-FR')} ${esc(unit)}`;
+  const label = { busy: 'mise à jour…', cached: 'cache', fresh: 'à jour' }[st];
+  $('#cacheState').className = `cache-state ${st}`;
+  $('#cacheState').textContent = `${label} · ${hhmm(checked)}`;
+  $('#cacheState').title = `Vérifié auprès d'ODK Central à ${new Date(checked).toLocaleTimeString('fr-FR')}\nDonnées modifiées pour la dernière fois : ${new Date(changed).toLocaleString('fr-FR')}\n${st === 'cached' ? 'Servi depuis le cache du serveur.' : st === 'busy' ? 'Servi depuis le cache ; une mise à jour est en cours en arrière-plan.' : ''}\nCliquez sur « actualiser » pour ne charger que les nouveautés (Maj+clic : tout recharger).`;
+}
+
+// ------------------------------------------------------------------ cache panel
+async function openCachePanel() {
+  const dlg = $('#cacheDialog');
+  const draw = async () => {
+    let info;
+    try { info = await api('/api/cache'); } catch (e) { return toast(e.message, true); }
+    const mb = b => (b / 1048576).toLocaleString('fr-FR', { maximumFractionDigits: b < 10485760 ? 1 : 0 }) + ' Mo';
+    const kb = b => b < 1048576 ? Math.max(1, Math.round(b / 1024)).toLocaleString('fr-FR') + ' ko' : mb(b);
+    const ago = t => { const s = Math.round((Date.now() - t) / 1000); return s < 60 ? `il y a ${s} s` : s < 3600 ? `il y a ${Math.round(s / 60)} min` : s < 86400 ? `il y a ${Math.round(s / 3600)} h` : new Date(t).toLocaleDateString('fr-FR'); };
+    const filt = p => [p.from && `du ${p.from}`, p.to && `au ${p.to}`, p.reviewState && $(`#reviewState option[value="${p.reviewState}"]`)?.textContent].filter(Boolean).join(', ') || 'toutes';
+    const lastOp = l => !l ? '' : l.kind === 'full' ? `Complet · ${(l.rows || 0).toLocaleString('fr-FR')} lignes · ${(l.ms / 1000).toLocaleString('fr-FR', { maximumFractionDigits: 1 })} s${l.reason ? ` <span class="muted">(${esc(l.reason)})</span>` : ''}`
+      : l.kind === 'delta' ? `Incrémental · +${l.added} nouvelle(s), ${l.updated} modifiée(s) · ${l.ms} ms` : `Vérifié, aucun changement · ${l.ms} ms`;
+    const t = info.totals, set = info.settings;
+    dlg.innerHTML = `<form method="dialog" class="cache-form">
+      <header><h3>Cache des données</h3>
+        <p class="fx-help">Les téléchargements depuis ODK Central sont gardés ${t.persist ? 'en mémoire et sur le disque du serveur (compressés)' : 'en mémoire'} et partagés entre les utilisateurs du même serveur, après vérification des droits de chacun.
+        Les données de moins de <b>${set.freshMinutes} min</b> sont servies directement ; au-delà, elles s'affichent tout de suite puis se mettent à jour en arrière-plan.
+        Une mise à jour ne télécharge que les soumissions nouvelles ou modifiées${set.incremental ? '' : ' <span class="bad">(non disponible sur ce serveur : ODK Central antérieur à 1.3)</span>'} ; un rechargement complet a lieu au moins toutes les ${set.fullRefreshHours} h.</p></header>
+      <div class="cache-table-wrap"><table class="cache-table"><thead><tr><th>Formulaire</th><th>Table · filtre</th><th class="r">Lignes</th><th class="r">Taille</th><th>Données</th><th>Dernière opération</th><th class="r">Accès</th><th></th></tr></thead><tbody>
+      ${info.entries.map(e => `<tr data-key="${e.key}">
+        <td><b>${esc(e.formName)}</b><br><span class="muted">projet ${esc(e.projectId)}</span></td>
+        <td>${esc(e.table === 'Submissions' ? 'Soumissions' : e.table.replace(/^Submissions\./, '↳ '))}<br><span class="muted">${esc(filt(e.params))}</span></td>
+        <td class="r">${(e.rows || 0).toLocaleString('fr-FR')}</td>
+        <td class="r" title="${kb(e.rawBytes)} non compressé">${kb(e.bytes)}<br><span class="muted">÷${Math.max(1, Math.round(e.rawBytes / Math.max(1, e.bytes)))}</span></td>
+        <td>${e.refreshing ? '<span class="cache-state busy">mise à jour…</span>' : `vérifiées ${ago(e.at)}`}<br><span class="muted">modifiées ${ago(e.dataAt)}</span></td>
+        <td>${lastOp(e.last)}</td>
+        <td class="r">${e.hits}</td>
+        <td class="acts"><button type="button" class="ghost sm" data-act="refresh" title="Ne charger que les nouveautés">↻</button><button type="button" class="ghost sm" data-act="full" title="Tout recharger">⟳</button><button type="button" class="ghost sm" data-act="delete" title="Supprimer du cache">🗑</button></td>
+      </tr>`).join('') || '<tr><td colspan="8" class="muted">Le cache est vide pour ce serveur.</td></tr>'}
+      </tbody></table></div>
+      <footer><span class="muted">${t.entries} entrée(s) au total · mémoire ${mb(t.memBytes)} / ${mb(t.memMax)}${t.persist ? ` · disque ${mb(t.diskBytes)} / ${mb(t.diskMax)}` : ''}</span><span class="grow"></span>
+        <button type="button" class="ghost danger" id="cacheClear">Vider le cache de mes formulaires</button><button value="close" class="ghost">Fermer</button></footer></form>`;
+    $$('[data-act]', dlg).forEach(b => (b.onclick = async () => {
+      const key = b.closest('tr').dataset.key, act = b.dataset.act;
+      b.disabled = true; b.textContent = '…';
+      try {
+        if (act === 'delete') await api(`/api/cache/${key}`, { method: 'DELETE' });
+        else await api(`/api/cache/${key}/refresh`, { method: 'POST', body: JSON.stringify({ full: act === 'full' }) });
+      } catch (e) { toast(e.message, true); }
+      await draw();
+      if (dataStatus?.results.some(r => r.key === key)) loadData(false, { silent: true });
+    }));
+    $('#cacheClear', dlg).onclick = async () => {
+      if (!confirm('Vider le cache de tous vos formulaires sur ce serveur ? Les prochains affichages rechargeront les données depuis ODK Central.')) return;
+      try { const r = await api('/api/cache', { method: 'DELETE' }); toast(`${r.deleted} entrée(s) supprimée(s)`); } catch (e) { toast(e.message, true); }
+      draw();
+    };
+  };
+  await draw();
+  if (!dlg.open) dlg.showModal();
 }
 
 // ------------------------------------------------------------------ save / open
@@ -1167,7 +1701,8 @@ async function save(asNew) {
     name = prompt('Nom de la visualisation', state.title || state.name || '');
     if (!name) return;
   }
-  const body = JSON.stringify({ ...state, name, id: undefined, mine: undefined });
+  const snapshot = transforms.map(({ server, pid, fid, owner, ownerName, updatedAt, mine, local, ...t }) => t);
+  const body = JSON.stringify({ ...state, name, id: undefined, mine: undefined, transforms: snapshot });
   let saved;
   try {
     saved = state.id && !asNew
@@ -1209,7 +1744,9 @@ async function openVis(id) {
     const v = await api(`/api/visualizations/${id}`);
     const options = { ...blankState().options, ...v.options };
     if (v.options && v.options.pretty === false && v.options.lang == null) options.lang = '__raw'; // older saves
-    state = { ...blankState(), ...v, options };
+    pendingTransforms = { formId: v.formId, list: v.transforms || [] };
+    const { transforms: _snap, ...rest } = v;
+    state = { ...blankState(), ...rest, options };
     if (!v.mine) state.id = null; // someone else's: "Save" will create a copy
     history.replaceState(null, '', `#/${id}`);
     await loadProjects();
@@ -1301,7 +1838,7 @@ async function startApp(me, fresh) {
   $('#userName').textContent = me.demo ? 'Démo' : me.name;
   $('#userFull').textContent = me.demo ? 'Mode démonstration' : `${me.name} (${me.email})`;
   $('#userServer').textContent = me.demo ? 'Données fictives' : me.server;
-  if (fresh || serverChanged) { state = blankState(); data = []; allFields = []; fields = []; tables = []; labels = null; fieldMap = new Map(); }
+  if (fresh || serverChanged) { state = blankState(); data = []; allFields = []; fields = []; tables = []; labels = null; transforms = []; compiled = new Map(); displayFormats = new Map(); fieldMap = new Map(); dataStatus = null; }
   render();
   const id = location.hash.match(/^#\/([\w-]+)/);
   try {
@@ -1326,6 +1863,7 @@ function bindLogin() {
   };
   $('#btnUser').onclick = () => ($('#userMenu').hidden = !$('#userMenu').hidden);
   $('#btnLogout').onclick = () => { $('#userMenu').hidden = true; logout(); };
+  $('#btnCache').onclick = () => { $('#userMenu').hidden = true; openCachePanel(); };
   $('#btnSwitch').onclick = async () => {
     $('#userMenu').hidden = true;
     await api('/api/logout', { method: 'POST', body: '{}' }).catch(() => {});

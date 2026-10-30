@@ -23,7 +23,9 @@ Le fichier `.env` n'est pas obligatoire. Pour l'utiliser : `cp .env.example .env
 | `ALLOWED_SERVERS` | Liste blanche de serveurs Central autorisés (séparés par des virgules) |
 | `ALLOW_DEMO=false` | Masque le bouton « données de démonstration » |
 | `HOST_PORT` | Port publié sur le serveur (défaut 3000) |
-| `CACHE_MINUTES` | Durée du cache des soumissions (défaut 5) |
+| `CACHE_MINUTES` | Fraîcheur du cache (défaut 5 min) ; au-delà, mise à jour en arrière-plan |
+| `CACHE_PERSIST=false` | Cache en mémoire seulement (rien sur le disque) |
+| `CACHE_MEMORY_MB` / `CACHE_DISK_MB` | Taille max. du cache (256 / 2 048 Mo compressés) |
 
 Après modification : `docker compose up -d`.
 
@@ -79,8 +81,9 @@ Dans ce cas, publiez le port uniquement en local : `HOST_PORT=127.0.0.1:3000` da
 | Mettre à jour après modification du code | `docker compose up -d --build` |
 | Redémarrer | `docker compose restart` |
 | Arrêter | `docker compose down` (les visualisations enregistrées sont conservées) |
-| Sauvegarder les visualisations | `docker cp odk-visualizer:/app/data/visualizations.json ./backup.json` |
-| Restaurer | `docker cp ./backup.json odk-visualizer:/app/data/visualizations.json` |
+| Sauvegarder visualisations et champs transformés | `docker cp odk-visualizer:/app/data/visualizations.json ./ && docker cp odk-visualizer:/app/data/transforms.json ./` |
+| Restaurer | `docker cp ./visualizations.json odk-visualizer:/app/data/ && docker cp ./transforms.json odk-visualizer:/app/data/` |
+| Vider le cache des données | menu utilisateur → « Cache des données » → « Vider », ou `docker exec odk-visualizer sh -c 'rm -f /app/data/cache/*'` puis `docker compose restart` |
 | Vérifier la santé | `curl http://localhost:3000/api/health` |
 
 ## 6. Serveur sans Internet
@@ -100,5 +103,5 @@ docker compose up -d --no-build
 - Tourne avec l'utilisateur non-root `node`.
 - `HEALTHCHECK` intégré sur `/api/health`.
 - Sessions en mémoire : après un redémarrage du conteneur, les utilisateurs se reconnectent.
-- Volume `odkvis-data` monté sur `/app/data` pour les visualisations sauvegardées.
+- Volume `odkvis-data` monté sur `/app/data` : visualisations, champs transformés et cache des données (`/app/data/cache`, conservé aux redémarrages).
 - Arrêt propre sur `SIGTERM`, rotation des journaux (3 × 10 Mo).

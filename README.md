@@ -69,6 +69,46 @@ Ils sont classés par catégorie, comme dans la galerie d'Apache Superset ; ✦ 
 - Les champs parents apparaissent dans la liste avec **↑** : région du ménage, date de soumission, enquêteur… On peut faire « membres vaccinés **par région** » ou « vaccins **par mois de soumission** ».
 - Les filtres de période et d'état de revue s'appliquent aussi aux répétitions, par l'intermédiaire de la soumission parente (`$root/Submissions/...`). Pour les anciennes versions de Central, le filtrage se fait dans le navigateur.
 
+### Cache des données (requêtes lourdes)
+
+Télécharger toutes les soumissions d'un gros formulaire par OData peut prendre du temps. Le serveur garde donc chaque téléchargement en cache (une table × un filtre de période ou d'état de revue) :
+
+- **Deux niveaux** : en mémoire (les plus utilisés) et sur le disque, en fichiers gzip (environ 10 à 20 fois plus petits). Le cache **survit aux redémarrages**. Les fichiers sont lisibles par le serveur seulement (droits 600).
+- **Partagé entre utilisateurs** du même serveur ODK : si 20 personnes ouvrent le même formulaire, Central n'est sollicité qu'une fois. Avant de servir un cache, le serveur vérifie toujours que le compte ODK de l'utilisateur a accès au formulaire, avec une vérification toutes les 2 minutes.
+- **Affichage immédiat** : les données de moins de `CACHE_MINUTES` sont servies directement. Plus anciennes, elles s'affichent tout de suite et se mettent à jour en arrière-plan ; le graphique se rafraîchit tout seul quand la mise à jour arrive.
+- **Mise à jour incrémentale** :
+  1. Une vérification légère est d'abord faite : quelques requêtes de comptage, sans télécharger de données. Si rien n'a changé, aucune donnée n'est téléchargée.
+  2. Sinon, seules les soumissions **nouvelles ou modifiées** sont récupérées (`__system/submissionDate` / `__system/updatedAt`, ODK Central 1.3 et plus).
+  3. Les suppressions et les changements d'état de revue sont détectés, et déclenchent alors un rechargement complet.
+  4. Un rechargement complet a lieu au moins toutes les `CACHE_FULL_REFRESH_HOURS` heures.
+- **Une seule requête à la fois** par donnée : des demandes simultanées attendent le même téléchargement.
+- **Réponses compressées** (gzip) et **ETag** : un navigateur qui a déjà les données reçoit une réponse « 304 » vide.
+- **Panneau « Cache des données »** (menu utilisateur) : pour chaque entrée, les lignes, la taille, la date de vérification, la dernière opération (complète, incrémentale ou vérifiée) et le nombre d'accès. Boutons pour actualiser, tout recharger, supprimer ou vider le cache.
+- Le bouton **↻ actualiser** ne charge que les nouveautés ; **Maj + clic** recharge tout.
+
+### Formateur de champs (ƒ)
+
+Cliquez sur un champ, puis sur **« ƒ Formater / transformer… »**, ou sur **« + ƒ champ calculé »**. Un aperçu en direct, calculé sur les données chargées, montre des exemples avant → après, le nombre de valeurs converties et non reconnues, et la répartition du résultat.
+
+| Transformation | Exemples |
+|---|---|
+| **Format d'affichage du nombre** | décimales, préfixe/suffixe (`FCFA`, `kg`), séparateur de milliers, échelle k / M, pourcentage. Seul l'affichage change, pas les données. |
+| **Convertir en nombre** | texte « 1 234,5 », « 12 % », « 3000 FCFA » → nombre ; × / + ; arrondi |
+| **Classes / tranches** | âge → `< 5 · 5 – 14 · 15 – 49 · 50 et +`, ou classes de même largeur, libellés personnalisés |
+| **Regrouper / recoder** | `Forage`, `Robinet`, `Puits protégé` → « Eau améliorée » ; valeurs restantes gardées, en « Autre » ou ignorées ; fonctionne aussi sur les choix multiples |
+| **Format du texte** | casse, espaces, accents, remplacer (expression régulière possible), extraire, N premiers caractères : « NIAMEY », « niamey » → « Niamey » |
+| **Texte → date** | JJ/MM/AAAA, MM/JJ/AAAA, AAAA-MM-JJ, horodatage Unix, numéro de jour Excel |
+| **Partie de date** | année, trimestre, mois, semaine ISO, jour de la semaine, heure… dans l'ordre du calendrier |
+| **Âge / durée** | âge exact depuis une date de naissance ; durée d'entretien `start` → `end` en minutes ; jusqu'à aujourd'hui, la date de soumission ou un autre champ |
+| **Calcul (formule)** | `${monthly_income} / ${hh_size}`, `if(${sex} = "female", 1, 0)`, `selected(${illnesses}, "malaria")`, `round(x, 1)`, `coalesce()`, `days_between()`, `concat()`… |
+
+- Le résultat est un **nouveau champ** placé dans « ƒ Champs transformés ». Il sert comme n'importe quel champ : Colonnes, Lignes, Filtre, Valeur, tous les graphiques, les exports CSV.
+- Les champs transformés d'une soumission sont aussi disponibles depuis ses **répétitions** (↑). Un champ transformé peut en utiliser un autre.
+- Les transformations sont **enregistrées pour le formulaire** sur le serveur et partagées avec les utilisateurs qui y ont accès. Seul l'auteur peut les modifier ; les autres en font une copie.
+- Une visualisation enregistrée embarque une copie des transformations qu'elle utilise : elle s'affiche même si le champ a été supprimé de la bibliothèque du formulaire.
+- Les formules sont analysées par un interpréteur dédié : aucun code n'est exécuté (`eval` n'est jamais utilisé).
+- Les dates ODK avec fuseau (`2026-03-05T00:30+01:00`) gardent la date et l'heure locales saisies sur l'appareil.
+
 ### Autres fonctions
 
 - Source : projet → formulaire → table (soumissions ou n'importe quel groupe répété).
@@ -95,7 +135,11 @@ Ouvrir `http://localhost:3000`. Le fichier `.env` est **facultatif** ; il sert s
 | `ODK_LOCK_URL=true` | Impose ce serveur : les utilisateurs saisissent seulement e-mail et mot de passe |
 | `ALLOWED_SERVERS` | Liste blanche de serveurs Central autorisés, séparés par des virgules |
 | `ALLOW_DEMO=false` | Masque le mode démonstration |
-| `CACHE_MINUTES` | Durée du cache des soumissions (par utilisateur), 5 par défaut |
+| `CACHE_MINUTES` | Fraîcheur du cache : au-delà, mise à jour en arrière-plan (5 min par défaut) |
+| `CACHE_MAX_STALE_HOURS` | Au-delà, la mise à jour est attendue avant d'afficher (24 h) |
+| `CACHE_FULL_REFRESH_HOURS` | Rechargement complet minimal (12 h) |
+| `CACHE_PERSIST` | `false` = cache en mémoire seulement, rien sur le disque |
+| `CACHE_MEMORY_MB` / `CACHE_DISK_MB` | Tailles maximales (256 Mo / 2 048 Mo, données compressées) |
 | `COOKIE_SECURE` | `auto` (défaut), `true` ou `false` |
 
 ## Fonctionnement technique
@@ -111,7 +155,8 @@ Le navigateur ne parle jamais directement à Central. `server.js` relaie les app
 | `…/fields` | `GET /v1/projects/:p/forms/:f/fields?odata=true` |
 | `…/tables` | `GET …/:f.svc/$metadata` |
 | `…/labels` | `GET /v1/projects/:p/forms/:f.xml` + `GET …/attachments/:fichier.csv` |
-| `…/data` | `GET …/:f.svc/<table>?$top=1000&$skip=…&$count=true&$filter=…` (toutes les pages, en cache ; `$root/Submissions/…` pour les répétitions) |
+| `…/data` | `GET …/:f.svc/<table>?$top=1000&$skip=…&$count=true&$filter=…` (toutes les pages ; `$root/Submissions/…` pour les répétitions), puis mises à jour par `$filter=__system/updatedAt gt …` et vérifications `$top=1&$count=true` |
+| contrôle d'accès | `GET /v1/projects/:p/forms/:f` avec le jeton de l'utilisateur avant de servir un cache |
 
 L'agrégation se fait dans le navigateur ; c'est rapide jusqu'à environ 100 000 lignes par table.
 
@@ -120,6 +165,7 @@ L'agrégation se fait dans le navigateur ; c'est rapide jusqu'à environ 100 000
 - Servez l'application en **HTTPS** : le mot de passe transite du navigateur vers l'application. Voir DOCKER.md, section HTTPS.
 - Le serveur se connecte à l'adresse saisie par l'utilisateur. Sur une installation publique, utilisez `ODK_LOCK_URL` ou `ALLOWED_SERVERS` pour limiter les serveurs joignables.
 - La connexion est bloquée après 10 échecs en 10 minutes depuis la même adresse IP.
+- Le cache sur disque contient des données de soumissions : il est dans le volume `data` (droits 600). Mettez `CACHE_PERSIST=false` si rien ne doit être écrit sur le disque.
 - Les requêtes qui modifient des données doivent être en JSON, ce qui protège contre le CSRF.
 
 ## Pistes d'évolution
@@ -133,6 +179,8 @@ L'agrégation se fait dans le navigateur ; c'est rapide jusqu'à environ 100 000
 ```
 server.js        connexion ODK par utilisateur, proxy OData, cache, visualisations, fichiers statiques
 xform.js         lecture des libellés du XForm (questions, choix, langues) et des CSV joints
+cache.js         cache des données : mémoire LRU + fichiers gzip, une requête à la fois par donnée
+public/transforms.js  moteur du formateur (conversions, classes, regroupements, dates, formules)
 demo-data.js     données de démonstration
 public/          index.html, app.js (connexion, mise en page, agrégation, graphiques), styles.css
 .env.example     réglages facultatifs

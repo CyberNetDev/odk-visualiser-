@@ -66,6 +66,7 @@
         <button id="btnUser" class="ghost user"><span class="avatar" id="userAvatar">?</span><span id="userName"></span> ▾</button>
         <div class="menu-list" id="userMenu" hidden>
           <div class="menu-info"><b id="userFull"></b><br><span id="userServer"></span></div>
+          <button id="btnCache">Cache des données…</button>
           <button id="btnSwitch">Changer de serveur / compte</button>
           <button id="btnLogout">Se déconnecter</button>
         </div>
@@ -91,10 +92,10 @@
             <option value="approved">Approuvées uniquement</option>
           </select>
         </label>
-        <div class="status"><span id="rowCount">—</span> <button id="btnRefresh" class="link" title="Recharger depuis ODK Central">↻ actualiser</button></div>
+        <div class="status"><span id="rowCount">—</span><span class="status-r"><span id="cacheState" class="cache-state"></span> <button id="btnRefresh" class="link" title="Ne charger que les soumissions nouvelles ou modifiées (Maj+clic : tout recharger)">↻ actualiser</button></span></div>
       </section>
       <section class="panel fields-panel">
-        <h3>Champs</h3>
+        <h3 class="with-btn">Champs <button id="btnCalc" class="link" title="Créer un champ calculé (formule)">+ ƒ champ calculé</button></h3>
         <input id="fieldSearch" type="search" placeholder="Rechercher un champ">
         <ul id="fieldList" class="field-list"></ul>
         <p class="hint">Glissez un champ vers Colonnes, Lignes ou Filtre — ou cliquez dessus.</p>
@@ -151,7 +152,11 @@
     </form>
   </dialog>
 
+  <dialog id="fmtDialog" class="wide"></dialog>
+  <dialog id="cacheDialog" class="wide"></dialog>
+
   <div id="toast" class="toast" hidden></div>
+  <script src="transforms.js"></script>
   <script src="app.js"></script>
 </body>
 </html>
