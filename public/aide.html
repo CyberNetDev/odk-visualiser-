@@ -1,0 +1,409 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Guide d'utilisation — ODK Visualizer</title>
+  <meta name="description" content="Comment utiliser ODK Visualizer : connexion, premier graphique, types de visualisation, filtres, libellés, répétitions, formateur de champs, enregistrement et partage.">
+  <style>
+    :root { --bg: #f4f6f8; --panel: #fff; --ink: #1f2933; --muted: #637381; --line: #dfe3e8; --accent: #1565c0; --accent-soft: #e3eefb; --warn: #8a6100; --warn-bg: #fff3cd; --mark: #f57c00; }
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; scroll-padding-top: 72px; }
+    body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.6 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+    a { color: var(--accent); }
+    header.top { position: sticky; top: 0; z-index: 10; background: #fff; border-bottom: 1px solid var(--line); display: flex; align-items: center; gap: 16px; padding: 10px 20px; }
+    .brand { font-weight: 700; display: flex; gap: 8px; align-items: center; white-space: nowrap; }
+    .brand .logo { color: var(--accent); font-size: 20px; }
+    .brand small { font-weight: 500; color: var(--muted); }
+    header.top .go { margin-left: auto; background: var(--accent); color: #fff; text-decoration: none; padding: 7px 14px; border-radius: 6px; font-weight: 600; font-size: 14px; white-space: nowrap; }
+    .layout { display: grid; grid-template-columns: 260px minmax(0, 1fr); gap: 32px; max-width: 1180px; margin: 0 auto; padding: 24px 20px 80px; }
+    nav.toc { position: sticky; top: 72px; align-self: start; max-height: calc(100vh - 90px); overflow: auto; font-size: 14px; }
+    nav.toc input { width: 100%; padding: 8px 10px; border: 1px solid var(--line); border-radius: 6px; font: inherit; margin-bottom: 10px; background: #fff; }
+    nav.toc ol { list-style: none; margin: 0; padding: 0; }
+    nav.toc li a { display: block; padding: 5px 10px; border-radius: 5px; color: var(--ink); text-decoration: none; }
+    nav.toc li a:hover, nav.toc li a.on { background: var(--accent-soft); color: var(--accent); }
+    nav.toc .count { font-size: 12px; color: var(--muted); padding: 0 10px 8px; }
+    main { min-width: 0; }
+    section { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 22px 28px; margin-bottom: 18px; }
+    section[hidden] { display: none; }
+    h1 { font-size: 28px; line-height: 1.2; margin: 0 0 10px; }
+    h2 { font-size: 21px; margin: 0 0 10px; }
+    h3 { font-size: 16px; margin: 20px 0 6px; }
+    .lead { font-size: 16px; color: #454f5b; }
+    p, li { max-width: 78ch; }
+    code, kbd { font: 13px ui-monospace, SFMono-Regular, Menlo, monospace; background: #f4f6f8; border-radius: 4px; padding: 1px 5px; }
+    kbd { border: 1px solid var(--line); border-bottom-width: 2px; font-weight: 600; }
+    .tag { display: inline-block; font: 700 10px system-ui, sans-serif; border-radius: 3px; padding: 1px 5px; background: #eef1f4; color: var(--muted); vertical-align: 1px; }
+    .tag.num { background: #e6f4ea; color: #1e7e34; } .tag.date { background: #fdf0dc; color: #a15c00; } .tag.sel { background: #e8f0fe; color: #1a56c4; } .tag.geo { background: #f3e8fd; color: #7b1fa2; } .tag.fx { background: #f3e8fd; color: #7b1fa2; }
+    table { border-collapse: collapse; width: 100%; font-size: 14px; margin: 10px 0; }
+    th, td { border-bottom: 1px solid var(--line); padding: 7px 10px; text-align: left; vertical-align: top; }
+    th { background: #f6f8fa; font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
+    td:first-child { white-space: nowrap; font-weight: 600; }
+    .note, .tip, .warn { border-radius: 8px; padding: 10px 14px; margin: 12px 0; font-size: 14px; }
+    .tip { background: var(--accent-soft); }
+    .warn { background: var(--warn-bg); color: #5c4300; }
+    .note { background: #f6f8fa; border: 1px solid var(--line); }
+    .tip::before { content: "Astuce · "; font-weight: 700; color: var(--accent); }
+    .warn::before { content: "Attention · "; font-weight: 700; }
+    figure { margin: 14px 0; }
+    figure img { width: 100%; height: auto; border: 1px solid var(--line); border-radius: 8px; display: block; }
+    figcaption { font-size: 13px; color: var(--muted); margin-top: 6px; }
+    ol.steps { counter-reset: s; list-style: none; padding: 0; }
+    ol.steps > li { counter-increment: s; position: relative; padding: 2px 0 10px 40px; }
+    ol.steps > li::before { content: counter(s); position: absolute; left: 0; top: 0; width: 28px; height: 28px; border-radius: 50%; background: var(--accent); color: #fff; font-weight: 700; display: flex; align-items: center; justify-content: center; font-size: 14px; }
+    ol.legend { list-style: none; padding: 0; columns: 2; column-gap: 28px; }
+    ol.legend li { break-inside: avoid; display: flex; gap: 10px; margin-bottom: 8px; }
+    ol.legend b.n { flex-shrink: 0; width: 24px; height: 24px; border-radius: 50%; background: var(--mark); color: #fff; font-size: 13px; display: flex; align-items: center; justify-content: center; }
+    details { border: 1px solid var(--line); border-radius: 8px; padding: 0 14px; margin: 8px 0; background: #fff; }
+    details summary { cursor: pointer; padding: 10px 0; font-weight: 600; }
+    details[open] summary { border-bottom: 1px solid var(--line); margin-bottom: 8px; }
+    details > *:last-child { margin-bottom: 12px; }
+    mark { background: #fff1a8; padding: 0 1px; }
+    .grid2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 22px; }
+    @media (max-width: 900px) {
+      .layout { grid-template-columns: 1fr; padding: 14px 12px 60px; }
+      nav.toc { position: static; max-height: none; background: #fff; border: 1px solid var(--line); border-radius: 10px; padding: 12px; }
+      nav.toc ol { columns: 2; }
+      section { padding: 18px 16px; }
+      ol.legend, nav.toc ol { columns: 1; }
+      .grid2 { grid-template-columns: 1fr; }
+      td:first-child { white-space: normal; }
+      .wide-table { overflow-x: auto; }
+      header.top .brand small { display: none; }
+    }
+    @media print { header.top, nav.toc { display: none; } .layout { display: block; } section { break-inside: avoid-page; border: 0; } }
+  </style>
+</head>
+<body>
+<header class="top">
+  <div class="brand"><span class="logo">◧</span> ODK Visualizer <small>· Guide d'utilisation</small></div>
+  <a class="go" href="./">Ouvrir l'application</a>
+</header>
+
+<div class="layout">
+<nav class="toc" aria-label="Sommaire">
+  <input type="search" id="q" placeholder="Rechercher dans l'aide…" aria-label="Rechercher dans l'aide">
+  <div class="count" id="qCount" hidden></div>
+  <ol id="tocList">
+    <li><a href="#presentation">À quoi sert l'outil ?</a></li>
+    <li><a href="#connexion">Se connecter</a></li>
+    <li><a href="#premiers-pas">Votre premier graphique</a></li>
+    <li><a href="#interface">L'écran en un coup d'œil</a></li>
+    <li><a href="#mise-en-page">Colonnes, Lignes, Filtre, Valeur</a></li>
+    <li><a href="#types">Choisir un type de graphique</a></li>
+    <li><a href="#filtres">Période et filtres</a></li>
+    <li><a href="#libelles">Libellés et langues</a></li>
+    <li><a href="#repetitions">Groupes répétés</a></li>
+    <li><a href="#formateur">Formateur de champs (ƒ)</a></li>
+    <li><a href="#enregistrer">Enregistrer, partager, télécharger</a></li>
+    <li><a href="#affichage">Plein écran et raccourcis</a></li>
+    <li><a href="#donnees">Données à jour et cache</a></li>
+    <li><a href="#faq">Questions fréquentes</a></li>
+    <li><a href="#glossaire">Glossaire</a></li>
+  </ol>
+</nav>
+
+<main>
+<section id="presentation">
+  <h1>À quoi sert ODK Visualizer ?</h1>
+  <p class="lead">ODK Visualizer transforme les soumissions de vos formulaires <b>ODK Central</b> en graphiques, tableaux croisés et cartes, directement dans le navigateur. Il n'y a ni export Excel ni code à écrire.</p>
+  <p>Le fonctionnement s'inspire du <i>Data Visualizer</i> de DHIS2 :</p>
+  <ul>
+    <li>vous placez des <b>champs</b> du formulaire en <b>Colonnes</b>, en <b>Lignes</b> ou en <b>Filtre</b> ;</li>
+    <li>vous choisissez ce qu'il faut compter ou calculer (la <b>Valeur</b>) ;</li>
+    <li>vous choisissez un <b>type de graphique</b> ;</li>
+    <li>vous pouvez ensuite <b>enregistrer</b> la visualisation, la <b>partager</b> par un lien et la <b>télécharger</b> (image ou tableau).</li>
+  </ul>
+  <div class="grid2">
+    <div><h3>Pour qui ?</h3><p>Les gestionnaires de données, les superviseurs, les coordinateurs de projet et les partenaires qui ont un compte ODK Central et veulent suivre les résultats d'une enquête sans manipuler de fichiers.</p></div>
+    <div><h3>Ce que l'outil ne fait pas</h3><p>Il ne modifie jamais vos données ni vos formulaires dans ODK Central : il les <b>lit</b> seulement. Les champs calculés et les regroupements que vous créez n'existent que dans ODK Visualizer.</p></div>
+  </div>
+</section>
+
+<section id="connexion">
+  <h2>Se connecter</h2>
+  <ol class="steps">
+    <li><b>Serveur ODK Central</b> : l'adresse que vous utilisez pour ouvrir Central dans votre navigateur, par exemple <code>https://central.monorg.org</code>. Vous pouvez coller l'adresse complète d'une page de Central : elle est nettoyée automatiquement. Sur certaines installations, ce champ est déjà rempli et ne peut pas être modifié.</li>
+    <li><b>E-mail et mot de passe</b> : ceux de votre <b>compte web ODK Central</b>, celui qui vous sert à vous connecter à Central dans le navigateur.</li>
+    <li>Cliquez sur <b>Se connecter</b>. Vous ne voyez que les projets et formulaires autorisés pour votre compte.</li>
+  </ol>
+  <div class="warn">Les « utilisateurs mobiles » d'ODK Collect (ceux qui se connectent avec un QR code) ne peuvent pas se connecter. Il faut un compte web Central avec un rôle qui permet de voir les soumissions : <b>Administrateur</b>, <b>Gestionnaire de projet</b>, <b>Lecteur de projet</b> ou <b>Gestionnaire de données</b>. Le rôle <b>Collecteur de données</b> ne suffit pas.</div>
+  <ul>
+    <li>Votre mot de passe est transmis à votre serveur ODK Central et n'est <b>jamais enregistré</b> par l'application.</li>
+    <li>La session dure aussi longtemps que celle de Central (24 heures par défaut). Quand elle expire, l'écran de connexion réapparaît.</li>
+    <li>Le menu à votre nom, en haut à droite, permet de <b>changer de serveur ou de compte</b> et de <b>se déconnecter</b>.</li>
+    <li>Le bouton <b>Essayer avec des données de démonstration</b> ouvre une enquête fictive (1 200 ménages) pour découvrir l'outil sans compte. Il peut être désactivé par l'administrateur.</li>
+  </ul>
+</section>
+
+<section id="premiers-pas">
+  <h2>Votre premier graphique en 5 étapes</h2>
+  <ol class="steps">
+    <li>Dans le panneau de gauche, choisissez le <b>projet</b> et le <b>formulaire</b>. Le nombre de soumissions chargées s'affiche sous les filtres.</li>
+    <li>Dans la liste des <b>Champs</b>, cliquez sur un champ (par exemple <i>Région</i>), puis sur <b>Ajouter aux Lignes</b>. Vous pouvez aussi le faire glisser dans la zone <b>Lignes</b>. Un graphique apparaît aussitôt : le nombre de soumissions par région.</li>
+    <li>Pour suivre l'<b>évolution dans le temps</b>, placez la <i>Date de soumission</i> en <b>Lignes</b> et la <i>Région</i> en <b>Colonnes</b> : faites glisser les champs d'une zone à l'autre. Cliquez sur la date placée pour choisir la période : jour, semaine, <b>mois</b>, trimestre ou année.</li>
+    <li>Choisissez le <b>type de graphique</b> dans la liste en haut de l'écran : colonnes, courbe, tableau croisé, carte…</li>
+    <li>Donnez un <b>titre</b> (cliquez sur « Visualisation sans titre »), puis <b>Enregistrer</b>.</li>
+  </ol>
+  <div class="tip">Sur un formulaire tout juste ouvert, le bouton <b>Montrer un exemple</b> construit automatiquement un premier graphique. Il vous suffit ensuite de le modifier.</div>
+  <figure><img src="aide/interface.png" width="1366" height="860" alt="L'écran principal d'ODK Visualizer avec un graphique en colonnes empilées et des numéros sur chaque zone"><figcaption>L'écran principal. Les numéros sont expliqués dans la partie suivante.</figcaption></figure>
+</section>
+
+<section id="interface">
+  <h2>L'écran en un coup d'œil</h2>
+  <ol class="legend">
+    <li><b class="n">1</b><div><b>Masquer / afficher le panneau latéral</b> pour gagner de la place (touche <kbd>P</kbd>).</div></li>
+    <li><b class="n">2</b><div><b>Type de visualisation</b> : 23 types classés par usage. Le signe ✦ marque ceux inspirés d'Apache Superset.</div></li>
+    <li><b class="n">3</b><div><b>Nouveau, Ouvrir, Enregistrer, Télécharger</b> : la gestion de vos visualisations.</div></li>
+    <li><b class="n">4</b><div><b>Aide</b> : ouvre ce guide (touche <kbd>?</kbd>).</div></li>
+    <li><b class="n">5</b><div><b>Source de données</b> : projet, formulaire, table (soumissions ou groupe répété), période, état de revue, et le bouton <b>actualiser</b>.</div></li>
+    <li><b class="n">6</b><div><b>Champs du formulaire</b>, classés par groupe, avec leur type. Le bouton <b>+ ƒ champ calculé</b> crée une formule.</div></li>
+    <li><b class="n">7</b><div><b>Mise en page</b> : les zones Colonnes, Lignes et Filtre.</div></li>
+    <li><b class="n">8</b><div><b>Valeur et options</b> : nombre, somme, moyenne… ; libellés, tri, top N.</div></li>
+    <li><b class="n">9</b><div><b>Le graphique</b>, avec un titre modifiable et un rappel du formulaire, de la période et des filtres.</div></li>
+    <li><b class="n">10</b><div><b>Plein écran</b> pour présenter le graphique en réunion (touche <kbd>F</kbd>).</div></li>
+  </ol>
+  <h3>Les étiquettes des champs</h3>
+  <table>
+    <tr><th>Étiquette</th><th>Type de champ</th><th>Utilisation</th></tr>
+    <tr><td><span class="tag sel">UN</span></td><td>Choix unique (select_one)</td><td>Catégories : idéal en Lignes, Colonnes ou Filtre</td></tr>
+    <tr><td><span class="tag sel">MULTI</span></td><td>Choix multiples (select_multiple)</td><td>Chaque option cochée est comptée séparément (désactivable)</td></tr>
+    <tr><td><span class="tag num">123</span></td><td>Nombre (entier ou décimal)</td><td>Valeur à additionner ou à moyenner ; ou catégories</td></tr>
+    <tr><td><span class="tag date">DATE</span></td><td>Date, date et heure</td><td>Regroupé par jour, semaine, mois, trimestre ou année</td></tr>
+    <tr><td><span class="tag">ABC</span></td><td>Texte libre</td><td>Catégories ; nettoyable avec le formateur</td></tr>
+    <tr><td><span class="tag geo">GPS</span></td><td>Point GPS</td><td>Type « Carte (points GPS) »</td></tr>
+    <tr><td><span class="tag fx">ƒ</span></td><td>Champ transformé</td><td>Créé avec le formateur (classes, regroupements, formules…)</td></tr>
+    <tr><td>↑</td><td>Champ parent</td><td>Champ de la soumission parente, visible depuis un groupe répété</td></tr>
+  </table>
+</section>
+
+<section id="mise-en-page">
+  <h2>Colonnes, Lignes, Filtre, Valeur</h2>
+  <table>
+    <tr><th>Zone</th><th>Rôle</th><th>Exemple</th></tr>
+    <tr><td>Lignes</td><td>Les catégories principales : axe horizontal d'un graphique en colonnes, lignes d'un tableau croisé</td><td>Région</td></tr>
+    <tr><td>Colonnes</td><td>Les séries (couleurs) d'un graphique, colonnes d'un tableau croisé</td><td>Date de soumission (mois)</td></tr>
+    <tr><td>Filtre</td><td>Garder seulement certaines valeurs, sans les afficher en Lignes ou en Colonnes</td><td>Sexe = Femme</td></tr>
+    <tr><td>Valeur</td><td>Ce qui est calculé dans chaque case</td><td>Nombre de soumissions, moyenne de l'âge…</td></tr>
+  </table>
+  <h3>Manipuler les champs placés</h3>
+  <ul>
+    <li><b>Cliquez sur un champ placé</b> pour choisir les valeurs à garder (avec recherche et effectifs), la période d'une date, ou le comptage des choix multiples.</li>
+    <li><b>Faites-le glisser</b> d'une zone à l'autre, ou retirez-le avec <b>×</b>.</li>
+    <li>Plusieurs champs dans une même zone se combinent : <i>Région · Sexe</i>.</li>
+  </ul>
+  <h3>La Valeur</h3>
+  <p><b>Nombre</b> compte les soumissions (ou les lignes d'un groupe répété). <b>% du total</b> donne leur part. <b>Somme</b>, <b>Moyenne</b>, <b>Minimum</b> et <b>Maximum</b> portent sur un champ numérique à choisir.</p>
+  <h3>Les options</h3>
+  <ul>
+    <li><b>Afficher les valeurs</b> sur le graphique.</li>
+    <li><b>Libellés</b> : la langue du formulaire, ou les valeurs brutes (les codes).</li>
+    <li><b>Masquer (vide)</b> : retire les réponses manquantes.</li>
+    <li><b>Tri</b> : par libellé (ordre du formulaire) ou par valeur.</li>
+    <li><b>Top</b> : garder les N premières catégories.</li>
+    <li><b>Cible</b> : le maximum d'une jauge.</li>
+  </ul>
+</section>
+
+<section id="types">
+  <h2>Choisir un type de graphique</h2>
+  <p>La liste en haut de l'écran classe les types par usage. Quand un type demande une disposition particulière, une phrase d'explication s'affiche sous le titre du graphique.</p>
+  <div class="wide-table"><table>
+    <tr><th>Je veux…</th><th>Types conseillés</th><th>Comment remplir</th></tr>
+    <tr><td>Comparer des catégories</td><td>Colonnes, Barres, Radar</td><td>Catégories en Lignes ; séries éventuelles en Colonnes</td></tr>
+    <tr><td>Classer du plus grand au plus petit</td><td>Barres (Tri : Valeur ↓), Entonnoir</td><td>Catégories en Lignes</td></tr>
+    <tr><td>Suivre une évolution</td><td>Courbe, Aires empilées, Calendrier</td><td>Date (mois, semaine…) en Lignes ; le calendrier montre chaque jour</td></tr>
+    <tr><td>Montrer la part d'un tout</td><td>Secteurs, Rose, Treemap, Sunburst, Colonnes empilées</td><td>Treemap et Sunburst : niveaux en Lignes puis en Colonnes (région → district)</td></tr>
+    <tr><td>Croiser deux variables</td><td>Tableau croisé, Carte de chaleur</td><td>Une variable en Lignes, l'autre en Colonnes</td></tr>
+    <tr><td>Voir la dispersion d'un nombre</td><td>Boîte à moustaches, Histogramme</td><td>Champ numérique en Valeur ; groupes en Lignes ou Colonnes</td></tr>
+    <tr><td>Relier deux nombres</td><td>Nuage de points</td><td>Nombre en Lignes (axe X), nombre en Valeur (axe Y), couleur en Colonnes</td></tr>
+    <tr><td>Suivre un parcours, un flux</td><td>Sankey</td><td>Au moins deux champs : chaque champ est une étape</td></tr>
+    <tr><td>Afficher un indicateur clé</td><td>Grand nombre, Grand nombre + tendance, Jauge</td><td>Aucun champ nécessaire ; la tendance compare la dernière période à la précédente</td></tr>
+    <tr><td>Localiser les enquêtes</td><td>Carte (points GPS)</td><td>Le champ GPS est trouvé automatiquement ; un champ en Colonnes colore les points</td></tr>
+  </table></div>
+  <div class="tip">Le même travail peut se montrer de plusieurs façons : changez simplement de type dans la liste, la mise en page est conservée.</div>
+</section>
+
+<section id="filtres">
+  <h2>Période et filtres</h2>
+  <ul>
+    <li><b>Soumis du… au…</b> limite les données à une période de <b>soumission</b>. Le filtre est appliqué par ODK Central, donc moins de données sont téléchargées.</li>
+    <li><b>État de revue</b> : toutes les soumissions, sans les rejetées, ou seulement les approuvées.</li>
+    <li><b>Filtre sur un champ</b> : placez le champ dans <b>Filtre</b> et cochez les valeurs à garder. Le filtre apparaît dans le rappel sous le titre et sur les images téléchargées.</li>
+    <li><b>Choix multiples</b> : un ménage qui a coché « paludisme » et « toux » compte dans les deux catégories. Le total peut donc dépasser le nombre de ménages. Ce comportement se désactive en cliquant sur le champ placé.</li>
+  </ul>
+  <div class="note">Pour filtrer sur la date d'une question (par exemple la date de la visite) plutôt que sur la date de soumission, placez cette date dans <b>Filtre</b> et cochez les mois voulus.</div>
+</section>
+
+<section id="libelles">
+  <h2>Libellés et langues</h2>
+  <ul>
+    <li>L'application lit le formulaire publié et affiche les <b>libellés des questions et des choix</b>, par exemple « Puits protégé » au lieu de <code>protected_well</code>.</li>
+    <li>Si le formulaire a plusieurs langues (<code>label::Français (fr)</code>, <code>label::English (en)</code>…), choisissez-la avec l'option <b>Libellés</b>. <b>Valeurs brutes</b> affiche les codes.</li>
+    <li>Les catégories suivent l'<b>ordre des choix du formulaire</b>.</li>
+    <li>Les listes externes (<i>select_one_from_file</i>) et les listes d'entités sont aussi traduites.</li>
+    <li>Dans la liste des valeurs d'un filtre, le code apparaît en gris à côté du libellé.</li>
+  </ul>
+</section>
+
+<section id="repetitions">
+  <h2>Groupes répétés (repeat)</h2>
+  <p>Un groupe répété (par exemple les membres d'un ménage) forme une <b>table</b> à part. Choisissez-la dans <b>Table</b>, dans le panneau de gauche : chaque ligne est alors un membre, et non plus un ménage.</p>
+  <ul>
+    <li>Les champs de la soumission parente restent disponibles, marqués <b>↑</b> : région, date de soumission, enquêteur… Vous pouvez ainsi faire « membres vaccinés <b>par région</b> ».</li>
+    <li>Cela marche aussi pour les répétitions imbriquées : <i>Ménage › Membres › Vaccins</i>.</li>
+    <li>La période et l'état de revue s'appliquent par l'intermédiaire de la soumission parente.</li>
+  </ul>
+  <div class="warn">Sur une table répétée, <b>Nombre</b> compte des lignes (des membres), pas des soumissions.</div>
+</section>
+
+<section id="formateur">
+  <h2>Formateur de champs (ƒ)</h2>
+  <p>Le formateur crée de <b>nouveaux champs</b> à partir de ceux du formulaire, sans modifier le formulaire. Pour l'ouvrir, cliquez sur un champ, puis sur <b>ƒ Formater / transformer…</b>. Pour une formule, utilisez <b>+ ƒ champ calculé</b>. Un <b>aperçu</b> montre des exemples avant → après, le nombre de valeurs converties et la répartition du résultat.</p>
+  <figure><img src="aide/formateur.png" width="1366" height="860" alt="La fenêtre du formateur : création de classes d'âge avec l'aperçu des résultats"><figcaption>Création de classes d'âge, avec l'aperçu en direct.</figcaption></figure>
+  <div class="wide-table"><table>
+    <tr><th>Transformation</th><th>Exemple</th></tr>
+    <tr><td>Format d'affichage</td><td>Revenu affiché « 45,2 k FCFA » ; décimales, unité, %, séparateur de milliers</td></tr>
+    <tr><td>Classes / tranches</td><td>Âge → <code>&lt; 5 · 5 – 14 · 15 – 49 · 50 et +</code></td></tr>
+    <tr><td>Regrouper / recoder</td><td>Forage, Robinet, Puits protégé → « Eau améliorée »</td></tr>
+    <tr><td>Format du texte</td><td>« NIAMEY », « niamey » → « Niamey » ; remplacer, extraire, supprimer les accents</td></tr>
+    <tr><td>Convertir en nombre</td><td>« 1 234,5 », « 12 % », « 3000 FCFA » → nombre</td></tr>
+    <tr><td>Texte → date</td><td>« 25/12/2025 » → date ; formats JJ/MM/AAAA, MM/JJ/AAAA, Excel…</td></tr>
+    <tr><td>Partie de date</td><td>Jour de la semaine, mois, trimestre, heure… dans l'ordre du calendrier</td></tr>
+    <tr><td>Âge / durée</td><td>Âge depuis la date de naissance ; durée de l'entretien en minutes</td></tr>
+    <tr><td>Calcul (formule)</td><td><code>${monthly_income} / ${hh_size}</code></td></tr>
+  </table></div>
+  <h3>Formules : l'essentiel</h3>
+  <p>Les champs s'écrivent <code>${nom}</code>, comme dans un XLSForm.</p>
+  <table>
+    <tr><th>Écriture</th><th>Signification</th></tr>
+    <tr><td><code>+ - * / ^ %</code></td><td>Opérations ; une division par zéro donne une valeur vide</td></tr>
+    <tr><td><code>= != &lt; &gt; &lt;= &gt;=</code>, <code>and or not</code></td><td>Comparaisons et conditions</td></tr>
+    <tr><td><code>if(${sexe} = "female", 1, 0)</code></td><td>Condition</td></tr>
+    <tr><td><code>selected(${maladies}, "malaria")</code></td><td>Un choix multiple contient-il « malaria » ?</td></tr>
+    <tr><td><code>count_selected(${maladies})</code></td><td>Nombre d'options cochées</td></tr>
+    <tr><td><code>round(x, 1)</code>, <code>min</code>, <code>max</code>, <code>abs</code></td><td>Arrondi et fonctions numériques</td></tr>
+    <tr><td><code>coalesce(${a}, 0)</code></td><td>Remplacer une valeur vide</td></tr>
+    <tr><td><code>days_between(${debut}, ${fin})</code></td><td>Nombre de jours entre deux dates</td></tr>
+    <tr><td><code>concat(${a}, " - ", ${b})</code>, <code>&amp;</code></td><td>Assembler du texte</td></tr>
+  </table>
+  <ul>
+    <li>Les champs transformés apparaissent dans <b>ƒ Champs transformés</b> et s'utilisent partout : Lignes, Colonnes, Filtre, Valeur, exports.</li>
+    <li>Ils sont <b>partagés</b> avec les autres utilisateurs du formulaire. Seul leur auteur peut les modifier ; les autres en font une copie.</li>
+  </ul>
+</section>
+
+<section id="enregistrer">
+  <h2>Enregistrer, partager, télécharger</h2>
+  <ul>
+    <li><b>Enregistrer</b> garde la mise en page, le type, les filtres, les options et le titre. <b>Enregistrer sous…</b> crée une copie.</li>
+    <li><b>Ouvrir</b> liste les visualisations enregistrées sur votre serveur ODK pour les projets auxquels vous avez accès.</li>
+    <li><b>Partager</b> : une visualisation enregistrée a une adresse propre (se terminant par <code>#/…</code>). Copiez-la depuis la barre d'adresse. La personne qui l'ouvre doit avoir accès au projet dans ODK Central.</li>
+    <li>Seul l'auteur peut modifier ou supprimer une visualisation. Les autres utilisateurs peuvent l'ouvrir, puis l'<b>enregistrer sous</b> un autre nom.</li>
+  </ul>
+  <h3>Télécharger</h3>
+  <ul>
+    <li><b>Image (PNG)</b> : le graphique, avec son titre et le rappel du formulaire, de la période et des filtres. Prêt pour un rapport.</li>
+    <li><b>Tableau agrégé (CSV)</b> : les chiffres du graphique, avec les libellés.</li>
+    <li><b>Données brutes filtrées (CSV)</b> : une ligne par soumission, avec les codes et une ligne de libellés de questions.</li>
+  </ul>
+  <div class="note">Les fichiers CSV s'ouvrent dans Excel ou LibreOffice. Ils sont encodés en UTF-8, donc les accents s'affichent correctement.</div>
+</section>
+
+<section id="affichage">
+  <h2>Plein écran, panneau latéral et raccourcis</h2>
+  <ul>
+    <li><b>Plein écran</b> : le bouton en haut à droite du graphique, ou la touche <kbd>F</kbd>. Idéal pour une réunion ou un vidéoprojecteur. Le titre et les filtres restent affichés. Pour quitter : <kbd>Échap</kbd> ou le bouton <b>Quitter</b>.</li>
+    <li><b>Panneau latéral</b> : le bouton tout à gauche de la barre du haut, ou la touche <kbd>P</kbd>. Le graphique prend toute la largeur. Votre choix est mémorisé sur cet appareil.</li>
+  </ul>
+  <table>
+    <tr><th>Touche</th><th>Action</th></tr>
+    <tr><td><kbd>F</kbd></td><td>Plein écran du graphique (activer / quitter)</td></tr>
+    <tr><td><kbd>P</kbd></td><td>Masquer / afficher le panneau latéral</td></tr>
+    <tr><td><kbd>Échap</kbd></td><td>Quitter le plein écran, fermer une fenêtre</td></tr>
+    <tr><td><kbd>?</kbd></td><td>Ouvrir ce guide</td></tr>
+    <tr><td><kbd>Maj</kbd> + clic sur « actualiser »</td><td>Tout recharger depuis ODK Central</td></tr>
+  </table>
+  <p>Les raccourcis ne s'activent pas pendant que vous écrivez dans un champ de texte.</p>
+  <div class="note">Sur iPhone, le navigateur ne permet pas le vrai plein écran : le graphique occupe alors toute la fenêtre. Tournez le téléphone à l'horizontale pour plus de place.</div>
+</section>
+
+<section id="donnees">
+  <h2>Données à jour et cache</h2>
+  <p>Pour aller vite, même avec des dizaines de milliers de soumissions, le serveur de l'application garde une copie des données téléchargées. C'est le <b>cache</b>. L'étiquette sous les filtres indique l'état :</p>
+  <table>
+    <tr><th>Étiquette</th><th>Signification</th></tr>
+    <tr><td><span class="tag num">à jour</span></td><td>Les données viennent d'être vérifiées auprès d'ODK Central</td></tr>
+    <tr><td><span class="tag sel">cache</span></td><td>Copie récente (moins de quelques minutes), affichée immédiatement</td></tr>
+    <tr><td><span class="tag" style="background:var(--warn-bg);color:var(--warn)">mise à jour…</span></td><td>Copie affichée tout de suite ; la mise à jour se fait en arrière-plan et le graphique se rafraîchit tout seul</td></tr>
+  </table>
+  <ul>
+    <li><b>↻ actualiser</b> ne télécharge que les soumissions nouvelles ou modifiées : c'est rapide. <kbd>Maj</kbd> + clic recharge tout.</li>
+    <li>Le <b>premier chargement</b> d'un très gros formulaire peut prendre une minute. Les suivants sont rapides.</li>
+    <li>Le menu à votre nom → <b>Cache des données</b> montre ce qui est en mémoire et permet de le vider.</li>
+  </ul>
+</section>
+
+<section id="faq">
+  <h2>Questions fréquentes</h2>
+  <details><summary>Je ne vois pas mon projet ou mon formulaire</summary><p>L'application montre exactement ce que votre compte ODK Central peut voir. Demandez à l'administrateur de Central de vous donner un rôle sur ce projet : <i>Lecteur de projet</i> suffit. Vérifiez aussi que le formulaire est <b>publié</b> : les brouillons n'apparaissent pas.</p></details>
+  <details><summary>« E-mail ou mot de passe incorrect » alors que j'utilise ODK Collect sans problème</summary><p>ODK Collect utilise un <b>utilisateur mobile</b> (QR code), qui ne peut pas se connecter ici. Il vous faut un <b>compte web</b> ODK Central, celui qui sert à ouvrir Central dans un navigateur.</p></details>
+  <details><summary>Le graphique affiche « Aucune donnée pour cette sélection »</summary><p>Vérifiez la période (<b>Soumis du… au…</b>), l'<b>état de revue</b> et les valeurs cochées dans les champs placés en <b>Filtre</b>. Un filtre trop strict peut tout exclure.</p></details>
+  <details><summary>Je vois des codes (<code>protected_well</code>) au lieu des libellés</summary><p>Vérifiez que l'option <b>Libellés</b> n'est pas sur « Valeurs brutes ». Si le problème persiste, les libellés n'ont pas pu être lus pour ce formulaire, ou la valeur vient d'une ancienne version du formulaire qui n'existe plus dans la liste de choix.</p></details>
+  <details><summary>Mes chiffres sont différents de ceux d'ODK Central</summary><p>Plusieurs causes possibles :</p><ul><li>Les données datent de quelques minutes : cliquez sur <b>actualiser</b>.</li><li>Les <b>choix multiples</b> comptent chaque option cochée.</li><li>Sur une table répétée, on compte des lignes et non des soumissions.</li><li>Les filtres de période et d'état de revue sont actifs.</li></ul></details>
+  <details><summary>Je ne peux pas modifier une visualisation ou un champ transformé</summary><p>Seul son auteur peut le modifier. Utilisez <b>Enregistrer sous…</b> pour en faire votre propre copie. Pour un champ transformé, l'enregistrement propose de créer une copie.</p></details>
+  <details><summary>Le premier affichage d'un formulaire est lent</summary><p>C'est normal pour un gros formulaire : toutes les soumissions sont téléchargées une première fois. Ensuite, seules les nouveautés le sont, et les autres utilisateurs profitent de la même copie.</p></details>
+  <details><summary>On me demande de me reconnecter</summary><p>Votre session ODK Central a expiré (24 heures par défaut) ou l'application a été redémarrée. Reconnectez-vous : vos visualisations enregistrées sont conservées.</p></details>
+</section>
+
+<section id="glossaire">
+  <h2>Glossaire</h2>
+  <table>
+    <tr><th>Terme</th><th>Définition</th><th>Équivalent DHIS2</th></tr>
+    <tr><td>Soumission</td><td>Un formulaire rempli et envoyé à ODK Central</td><td>Événement</td></tr>
+    <tr><td>Champ</td><td>Une question du formulaire, ou un champ transformé</td><td>Élément de données</td></tr>
+    <tr><td>Choix</td><td>Une réponse possible d'une question à choix</td><td>Option</td></tr>
+    <tr><td>Groupe répété</td><td>Partie du formulaire remplie plusieurs fois (membres, visites…)</td><td>Section répétable</td></tr>
+    <tr><td>Champ parent (↑)</td><td>Champ de la soumission à laquelle appartient une répétition</td><td>—</td></tr>
+    <tr><td>Période</td><td>Regroupement des dates : jour, semaine, mois, trimestre, année</td><td>Période</td></tr>
+    <tr><td>Champ de lieu</td><td>Région, district, formation sanitaire… placés en Lignes ou en Filtre</td><td>Unité d'organisation</td></tr>
+    <tr><td>Visualisation enregistrée</td><td>Mise en page, filtres et type gardés sous un nom</td><td>Favori</td></tr>
+    <tr><td>Libellé</td><td>Texte affiché d'une question ou d'un choix, dans une langue du formulaire</td><td>Nom</td></tr>
+    <tr><td>Cache</td><td>Copie des données gardée par le serveur pour aller plus vite</td><td>Tables d'analyse</td></tr>
+  </table>
+</section>
+</main>
+</div>
+
+<script>
+  // highlight the current section in the table of contents
+  const links = [...document.querySelectorAll('#tocList a')];
+  const byId = id => links.find(a => a.getAttribute('href') === '#' + id);
+  const obs = new IntersectionObserver(entries => {
+    for (const e of entries) if (e.isIntersecting) { links.forEach(a => a.classList.remove('on')); byId(e.target.id)?.classList.add('on'); }
+  }, { rootMargin: '-80px 0px -70% 0px' });
+  document.querySelectorAll('main section').forEach(s => obs.observe(s));
+
+  // search: hides sections that do not contain every word typed
+  const sections = [...document.querySelectorAll('main section')];
+  const norm = s => s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+  let t = null;
+  document.getElementById('q').addEventListener('input', e => {
+    clearTimeout(t);
+    t = setTimeout(() => {
+      const words = norm(e.target.value.trim()).split(/\s+/).filter(w => w.length > 1);
+      let shown = 0;
+      for (const s of sections) {
+        const ok = !words.length || words.every(w => norm(s.textContent).includes(w));
+        s.hidden = !ok;
+        byId(s.id).parentElement.hidden = !ok;
+        if (ok) { shown++; if (words.length) s.querySelectorAll('details').forEach(d => { if (words.some(w => norm(d.textContent).includes(w))) d.open = true; }); }
+      }
+      const c = document.getElementById('qCount');
+      c.hidden = !words.length;
+      c.textContent = shown ? `${shown} partie(s) trouvée(s)` : 'Aucun résultat';
+    }, 150);
+  });
+</script>
+</body>
+</html>

@@ -12,8 +12,30 @@
 <body>
   <!-- ======================= Connexion ======================= -->
   <section id="login" class="login" hidden>
+  <div class="login-wrap">
+    <div class="intro">
+      <div class="intro-brand"><span class="logo">◧</span> ODK Visualizer</div>
+      <h1>Vos données ODK en graphiques, tableaux et cartes, en quelques clics.</h1>
+      <p class="intro-lead">ODK Visualizer lit directement les soumissions de vos formulaires <b>ODK Central</b> et les transforme en visualisations, sans export Excel ni code. Le principe est celui du <i>Data Visualizer</i> de DHIS2 : vous glissez des champs, vous choisissez un type de graphique, vous enregistrez et partagez.</p>
+      <ul class="intro-features">
+        <li><span class="ico"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2" /></svg></span><div><b>23 types de visualisation</b><span>Colonnes, courbes, tableaux croisés, Sankey, treemap, jauges, calendrier…</span></div></li>
+        <li><span class="ico"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 4 3 6v14l6-2 6 2 6-2V4l-6 2-6-2zM9 4v14M15 6v14"/></svg></span><div><b>Cartes des points GPS</b><span>Les ménages, sites ou structures enquêtés sur une carte, colorés selon un champ.</span></div></li>
+        <li><span class="ico"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12V4h8l10 10-8 8L3 12z"/><circle cx="7.5" cy="7.5" r="1.5"/></svg></span><div><b>Les libellés de vos formulaires</b><span>Questions et choix du XLSForm, dans toutes ses langues, répétitions comprises.</span></div></li>
+        <li><span class="ico"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 4h-2a3 3 0 0 0-3 3v13M7 11h7M14 14l6 6M20 14l-6 6"/></svg></span><div><b>Champs calculés et regroupements</b><span>Classes d'âge, formules, durées, recodages… sans modifier le formulaire.</span></div></li>
+        <li><span class="ico"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M13 2 4 14h7l-1 8 9-12h-7l1-8z"/></svg></span><div><b>Rapide, même pour les gros formulaires</b><span>Seules les nouvelles soumissions sont téléchargées à chaque mise à jour.</span></div></li>
+        <li><span class="ico"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg></span><div><b>Vos droits ODK sont respectés</b><span>Chacun ne voit que les projets autorisés pour son propre compte.</span></div></li>
+      </ul>
+      <div class="intro-steps">
+        <b>Comment ça marche ?</b>
+        <ol><li>Connectez-vous avec votre compte ODK Central</li><li>Choisissez un projet et un formulaire</li><li>Glissez des champs en <i>Lignes</i> et <i>Colonnes</i>, choisissez un graphique</li></ol>
+      </div>
+      <div class="intro-links">
+        <a class="intro-jump" href="#loginForm">Se connecter ↓</a>
+        <a class="intro-help" href="aide.html" target="_blank" rel="noopener">Lire le guide d'utilisation →</a>
+      </div>
+    </div>
     <form id="loginForm" class="login-card" autocomplete="on">
-      <div class="login-brand"><span class="logo">◧</span> ODK Visualizer</div>
+      <div class="login-brand">Connexion</div>
       <p class="login-sub">Connectez-vous avec votre compte <b>ODK Central</b>. Vous verrez uniquement les projets auxquels votre compte a accès.</p>
       <p id="loginMsg" class="login-msg" hidden></p>
 
@@ -37,13 +59,15 @@
 
       <button type="submit" id="loginBtn" class="primary">Se connecter</button>
       <button type="button" id="demoBtn" class="ghost wide">Essayer avec des données de démonstration</button>
-      <p class="login-foot">Le mot de passe est transmis uniquement à votre serveur ODK Central et n'est jamais enregistré.</p>
+      <p class="login-foot">Le mot de passe est transmis uniquement à votre serveur ODK Central et n'est jamais enregistré.<br><a href="aide.html#connexion" target="_blank" rel="noopener">Besoin d'aide pour vous connecter ?</a></p>
     </form>
+  </div>
   </section>
 
   <!-- ======================= Application ======================= -->
   <div id="appRoot" class="root" hidden>
   <header class="topbar">
+    <button id="btnSidebar" class="icon-btn" type="button" aria-controls="sidebar" aria-expanded="true" title="Masquer le panneau latéral (P)"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16"/></svg><span class="sr">Masquer ou afficher le panneau latéral</span></button>
     <div class="brand"><span class="logo">◧</span> ODK Visualizer <span id="demoBadge" class="badge" hidden>DÉMO</span></div>
     <div class="vistype">
       <label for="visType" class="sr">Type de visualisation</label>
@@ -62,6 +86,7 @@
           <button data-dl="raw">Données brutes filtrées (CSV)</button>
         </div>
       </div>
+      <a id="btnHelp" class="ghost btn-like" href="aide.html" target="_blank" rel="noopener" title="Guide d'utilisation (?)">? Aide</a>
       <div class="menu">
         <button id="btnUser" class="ghost user"><span class="avatar" id="userAvatar">?</span><span id="userName"></span> ▾</button>
         <div class="menu-list" id="userMenu" hidden>
@@ -75,7 +100,7 @@
   </header>
 
   <div class="app">
-    <aside class="sidebar">
+    <aside class="sidebar" id="sidebar">
       <section class="panel">
         <h3>Source de données</h3>
         <label>Projet <select id="project"></select></label>
@@ -131,8 +156,12 @@
         </div>
       </section>
 
-      <section class="canvas-wrap">
+      <section class="canvas-wrap" id="canvasWrap">
+        <div class="canvas-tools">
+          <button id="btnFull" class="icon-btn" type="button" title="Plein écran (F)"><svg viewBox="0 0 24 24" aria-hidden="true"><path class="fs-on" d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/><path class="fs-off" d="M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5"/></svg><span class="fs-label">Plein écran</span></button>
+        </div>
         <input id="title" class="vis-title" placeholder="Visualisation sans titre">
+        <p id="visSub" class="vis-sub"></p>
         <p id="visHint" class="vis-hint" hidden></p>
         <div id="canvas" class="canvas"></div>
         <div id="empty" class="empty"></div>

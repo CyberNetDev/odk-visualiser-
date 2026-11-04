@@ -370,7 +370,22 @@ function readiness() {
   if (state.type === 'scatter' && kindOf(fieldMap.get(state.rows[0]?.path)) !== 'num') return `<strong>Placez un champ numérique en Lignes (axe X).</strong>${hint}`;
   if (state.type === 'sankey' && state.rows.length + state.columns.length < 2) return `<strong>Placez au moins deux champs.</strong>${hint}`;
   if (!v.noDims && !v.raw && !state.rows.length && !state.columns.length) {
-    return `<strong>Glissez des champs dans la mise en page.</strong>${hint || '<span>Exemple : <em>région</em> en Lignes et <em>date de soumission</em> (mois) en Colonnes.</span>'}`;
+    if (hint) return `<strong>Glissez des champs dans la mise en page.</strong>${hint}`;
+    const ex = exampleFields();
+    const n = data.length.toLocaleString('fr-FR');
+    return `<div class="welcome">
+      <strong>Le formulaire est chargé : ${n} ${state.table === 'Submissions' ? 'soumissions' : 'lignes'}. Créez votre premier graphique :</strong>
+      <ol>
+        <li>Dans le panneau de gauche, cliquez sur un champ${ex.cat ? `, par exemple <em>${esc(fieldLabel(ex.cat))}</em>` : ''}, puis sur <b>Ajouter aux Lignes</b> (ou glissez-le dans <b>Lignes</b>) : vous obtenez le nombre de soumissions par catégorie.</li>
+        ${ex.date && ex.cat ? `<li>Pour suivre l'évolution, placez plutôt <em>${esc(fieldLabel(ex.date))}</em> en <b>Lignes</b> (par mois) et <em>${esc(fieldLabel(ex.cat))}</em> en <b>Colonnes</b>.</li>` : '<li>Ajoutez si besoin un 2ᵉ champ en <b>Colonnes</b> pour croiser deux variables.</li>'}
+        <li>Choisissez le type de graphique dans la liste en haut de l'écran.</li>
+      </ol>
+      <div class="welcome-actions">
+        ${ex.cat || ex.date ? '<button type="button" id="btnExample">Montrer un exemple</button>' : ''}
+        <a class="btn-like" href="aide.html#premiers-pas" target="_blank" rel="noopener">Guide d'utilisation</a>
+      </div>
+      <div class="welcome-hint">Astuces : <kbd>P</kbd> masque le panneau latéral, <kbd>F</kbd> affiche le graphique en plein écran, <kbd>?</kbd> ouvre l'aide.</div>
+    </div>`;
   }
   return null;
 }
@@ -384,6 +399,7 @@ function render() {
   if (map) { map.remove(); map = null; }
   canvas.innerHTML = '';
   lastResult = null; lastFiltered = [];
+  $('#visSub').textContent = subtitle();
   const msg = readiness();
   $('#empty').innerHTML = msg || '';
   $('#empty').hidden = !msg;
@@ -857,6 +873,122 @@ const RENDERERS = {
   boxplot: renderBoxplot, histogram: renderHistogram, scatter: renderScatter, calendar: renderCalendar, sankey: renderSankey, map: renderMap,
 };
 
+// ------------------------------------------------------------------ first steps, subtitle, fullscreen, side panel
+// Fields used by the welcome card and "Montrer un exemple": a categorical field with few values + a date
+let exampleMemo = null;
+function exampleFields() {
+  if (exampleMemo && exampleMemo.data === data && exampleMemo.fields === fields) return exampleMemo.v;
+  const own = fields.filter(f => !f.parentTable && !f.derived);
+  let cat = null, best = Infinity;
+  for (const f of own.filter(x => ['sel', 'text'].includes(kindOf(x)) && !x.system).slice(0, 40)) {
+    const n = distinctValues({ path: f.path, values: null }).filter(([v]) => v !== EMPTY).length;
+    const score = n >= 2 && n <= 12 ? (kindOf(f) === 'sel' ? 0 : 20) + Math.abs(n - 5) : Infinity;
+    if (score < best) { best = score; cat = f; }
+  }
+  const date = fields.find(f => f.path.endsWith('__system/submissionDate')) || own.find(f => kindOf(f) === 'date') || null;
+  exampleMemo = { data, fields, v: { cat, date } };
+  return exampleMemo.v;
+}
+function showExample() {
+  const { cat, date } = exampleFields();
+  if (!cat && !date) return;
+  state.rows = []; state.columns = []; state.filters = [];
+  state.measure = { agg: 'count', field: '' };
+  if (date && cat) {
+    state.rows = [{ path: date.path, period: 'month' }]; state.columns = [{ path: cat.path }]; state.type = 'stackedColumn';
+    state.title = `${fieldLabel(cat)} par mois`;
+  } else if (cat) { state.rows = [{ path: cat.path }]; state.type = 'column'; state.title = fieldLabel(cat); }
+  else { state.rows = [{ path: date.path, period: 'month' }]; state.type = 'column'; state.title = 'Soumissions par mois'; }
+  render();
+  toast('Exemple créé : modifiez librement les champs, le type de graphique ou le titre.');
+}
+
+// "Enquête ménage · Soumissions · du 2026-03-01 au 2026-06-30 · Région : Zinder, Maradi"
+function subtitle() {
+  if (!state.formId) return '';
+  const parts = [$('#form').selectedOptions[0]?.textContent.replace(/\s*\(\d[\d\s]*\)$/, '') || state.formId];
+  if (state.table !== 'Submissions') parts.push(tableLabel(state.table));
+  if (state.from || state.to) parts.push(state.from && state.to ? `du ${state.from} au ${state.to}` : state.from ? `depuis le ${state.from}` : `jusqu'au ${state.to}`);
+  if (state.reviewState) parts.push($('#reviewState').selectedOptions[0]?.textContent || '');
+  for (const d of state.filters) {
+    if (!d.values || !d.values.length) continue;
+    const f = fieldMap.get(d.path);
+    const vals = d.values.map(v => valueLabel(d, v));
+    parts.push(`${fieldLabel(f)} : ${vals.length <= 3 ? vals.join(', ') : `${vals.slice(0, 2).join(', ')} +${vals.length - 2}`}`);
+  }
+  return parts.filter(Boolean).join(' · ');
+}
+
+const isFullscreen = () => document.fullscreenElement === $('#canvasWrap') || document.webkitFullscreenElement === $('#canvasWrap') || $('#canvasWrap').classList.contains('pseudo-fs');
+function setFsUi(on) {
+  $('#canvasWrap').classList.toggle('is-fs', on);
+  $('#btnFull').title = on ? 'Quitter le plein écran (Échap)' : 'Plein écran (F)';
+  $('.fs-label', $('#btnFull')).textContent = on ? 'Quitter' : 'Plein écran';
+  resizeVisual();
+}
+function setPseudoFs(on) {
+  $('#canvasWrap').classList.toggle('pseudo-fs', on);
+  document.body.classList.toggle('no-scroll', on);
+  setFsUi(on);
+}
+function toggleFullscreen() {
+  const el = $('#canvasWrap');
+  if (isFullscreen()) {
+    if (document.fullscreenElement) document.exitFullscreen();
+    else if (document.webkitFullscreenElement) document.webkitExitFullscreen();
+    else setPseudoFs(false);
+    return;
+  }
+  $('#popover').hidden = true;
+  // native fullscreen where available (not on iPhone Safari): otherwise a full-window overlay
+  if (el.requestFullscreen && document.fullscreenEnabled) el.requestFullscreen().catch(() => setPseudoFs(true));
+  else if (el.webkitRequestFullscreen) el.webkitRequestFullscreen();
+  else setPseudoFs(true);
+}
+for (const ev of ['fullscreenchange', 'webkitfullscreenchange']) {
+  document.addEventListener(ev, () => setFsUi(document.fullscreenElement === $('#canvasWrap') || document.webkitFullscreenElement === $('#canvasWrap')));
+}
+
+const UI_KEY = 'odkvis.ui';
+const uiPrefs = {
+  get() { try { return JSON.parse(localStorage.getItem(UI_KEY)) || {}; } catch { return {}; } },
+  set(p) { try { localStorage.setItem(UI_KEY, JSON.stringify({ ...uiPrefs.get(), ...p })); } catch { /* private mode */ } },
+};
+function setSidebar(hidden, save = true) {
+  document.body.classList.toggle('sidebar-hidden', hidden);
+  const b = $('#btnSidebar');
+  b.setAttribute('aria-expanded', String(!hidden));
+  b.title = hidden ? 'Afficher le panneau latéral (P)' : 'Masquer le panneau latéral (P)';
+  if (save) uiPrefs.set({ sidebarHidden: hidden });
+  resizeVisual();
+}
+
+let resizeTimer = null;
+function resizeVisual() {
+  // resize now and again after the side panel animation (200 ms)
+  const doIt = () => { chart && chart.resize(); map && map.invalidateSize(); };
+  requestAnimationFrame(doIt);
+  clearTimeout(resizeTimer); resizeTimer = setTimeout(doIt, 240);
+}
+
+function bindLayoutTools() {
+  $('#btnSidebar').onclick = () => setSidebar(!document.body.classList.contains('sidebar-hidden'));
+  $('#btnFull').onclick = toggleFullscreen;
+  $('#empty').addEventListener('click', e => { if (e.target.closest('#btnExample')) showExample(); });
+  if (window.ResizeObserver) new ResizeObserver(() => { chart && chart.resize(); map && map.invalidateSize(); }).observe($('#canvas'));
+  setSidebar(!!uiPrefs.get().sidebarHidden, false);
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape' && $('#canvasWrap').classList.contains('pseudo-fs')) { setPseudoFs(false); return; }
+    if (e.ctrlKey || e.metaKey || e.altKey || $('#appRoot').hidden) return;
+    const t = e.target;
+    if (t.closest('input, textarea, select, [contenteditable], dialog[open]') || document.querySelector('dialog[open]')) return;
+    const k = e.key.toLowerCase();
+    if (k === 'f') { e.preventDefault(); toggleFullscreen(); }
+    else if (k === 'p') { e.preventDefault(); setSidebar(!document.body.classList.contains('sidebar-hidden')); }
+    else if (e.key === '?') { e.preventDefault(); window.open('aide.html', '_blank', 'noopener'); }
+  });
+}
+
 // ------------------------------------------------------------------ layout zones & chips
 function chipText(d) {
   const f = fieldMap.get(d.path) || { name: d.path };
@@ -1124,7 +1256,7 @@ function bindControls() {
   $('#btnOpen').onclick = openDialog;
   $('#btnDownload').onclick = () => ($('#downloadMenu').hidden = !$('#downloadMenu').hidden);
   $$('[data-dl]').forEach(b => (b.onclick = () => { $('#downloadMenu').hidden = true; download(b.dataset.dl); }));
-  window.addEventListener('resize', () => { chart && chart.resize(); map && map.invalidateSize(); });
+  window.addEventListener('resize', resizeVisual);
 }
 
 function resetLayout() { state.columns = []; state.rows = []; state.filters = []; state.measure = { agg: 'count', field: '' }; }
@@ -1763,7 +1895,23 @@ function download(kind) {
   if (kind === 'png') {
     if (!chart) return toast('L\'export PNG fonctionne pour les graphiques. Utilisez le CSV pour les tableaux.', true);
     const url = chart.getDataURL({ type: 'png', pixelRatio: 2, backgroundColor: '#fff' });
-    fetch(url).then(r => r.blob()).then(b => saveBlob(b, fileName('png')));
+    // add the title and the subtitle (form, period, filters) above the chart image
+    const img = new Image();
+    img.onload = () => {
+      const title = state.title || '', sub = subtitle();
+      const pad = 40, th = title ? 56 : 0, sh = sub ? 40 : 0;
+      const c = document.createElement('canvas');
+      c.width = img.width; c.height = img.height + (th || sh ? pad + th + sh : 0);
+      const g = c.getContext('2d');
+      g.fillStyle = '#fff'; g.fillRect(0, 0, c.width, c.height);
+      g.textAlign = 'center'; g.textBaseline = 'top';
+      const font = 'system-ui, -apple-system, "Segoe UI", Roboto, sans-serif';
+      if (title) { g.fillStyle = '#1f2933'; g.font = `600 40px ${font}`; g.fillText(title, c.width / 2, pad, c.width - 2 * pad); }
+      if (sub) { g.fillStyle = '#637381'; g.font = `26px ${font}`; g.fillText(sub, c.width / 2, pad + th, c.width - 2 * pad); }
+      g.drawImage(img, 0, c.height - img.height);
+      c.toBlob(b => saveBlob(b, fileName('png')), 'image/png');
+    };
+    img.src = url;
   } else if (kind === 'table') {
     const res = lastResult;
     if (!res) return toast('Pas de tableau agrégé pour ce type : utilisez les données brutes.', true);
@@ -1805,7 +1953,9 @@ function showLogin(message = '', kind = 'error') {
   if (!$('#loginEmail').value) $('#loginEmail').value = saved.last.email || '';
   $('#demoBtn').hidden = !config.allowDemo;
   $('#loginPassword').value = '';
-  setTimeout(() => ($('#loginServer').value || config.lockServer ? ($('#loginEmail').value ? $('#loginPassword') : $('#loginEmail')) : $('#loginServer')).focus(), 0);
+  // focus the first empty field without scrolling: on a phone the description above must stay visible
+  setTimeout(() => ($('#loginServer').value || config.lockServer ? ($('#loginEmail').value ? $('#loginPassword') : $('#loginEmail')) : $('#loginServer')).focus({ preventScroll: true }), 0);
+  $('#login').scrollTop = 0;
 }
 
 async function doLogin(payload) {
@@ -1875,7 +2025,7 @@ function bindLogin() {
 
 // ------------------------------------------------------------------ boot
 (async function init() {
-  bindControls(); setupZones(); bindLogin();
+  bindControls(); setupZones(); bindLogin(); bindLayoutTools();
   try { config = await api('/api/config'); } catch { config = {}; }
   try {
     const me = await api('/api/me');

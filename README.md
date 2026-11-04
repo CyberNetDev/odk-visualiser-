@@ -109,6 +109,15 @@ Cliquez sur un champ, puis sur **« ƒ Formater / transformer… »**, ou sur **
 - Les formules sont analysées par un interpréteur dédié : aucun code n'est exécuté (`eval` n'est jamais utilisé).
 - Les dates ODK avec fuseau (`2026-03-05T00:30+01:00`) gardent la date et l'heure locales saisies sur l'appareil.
 
+### Prise en main et confort d'utilisation
+
+- **Page d'accueil** : l'écran de connexion présente l'outil (ce qu'il fait, ses fonctions principales, comment démarrer) et renvoie vers le guide.
+- **Premiers pas** : à l'ouverture d'un formulaire, une carte explique comment créer le premier graphique. Le bouton **Montrer un exemple** en construit un automatiquement.
+- **Guide d'utilisation** (`/aide.html`) : connexion, premier graphique, types de visualisation, filtres, libellés, répétitions, formateur, partage, raccourcis, questions fréquentes, glossaire DHIS2. Il contient des captures annotées et un champ de recherche, s'ouvre sans connexion et s'imprime. On y accède par le bouton **? Aide**.
+- **Masquer le panneau latéral** : bouton à gauche de la barre du haut ou touche <kbd>P</kbd>. Le choix est mémorisé sur l'appareil.
+- **Plein écran** du graphique : bouton en haut à droite du graphique ou touche <kbd>F</kbd>. Titre et filtres restent visibles. Sur iPhone, il y a un repli en plein fenêtre.
+- **Rappel du contexte** sous le titre (formulaire, table, période, filtres), repris sur les **images PNG** téléchargées.
+
 ### Autres fonctions
 
 - Source : projet → formulaire → table (soumissions ou n'importe quel groupe répété).
@@ -170,6 +179,8 @@ L'agrégation se fait dans le navigateur ; c'est rapide jusqu'à environ 100 000
 
 ## Pistes d'évolution
 
+- **Connecteurs IASO, DHIS2, CommCare, mSupply** : voir [ROADMAP-CONNECTEURS.md](ROADMAP-CONNECTEURS.md) (ordre conseillé, API, prérequis).
+
 - Ajouter les listes d'entités (*Entities*) comme source de données.
 - Ajouter des tableaux de bord réunissant plusieurs visualisations, comme l'app Dashboard de DHIS2.
 - Ajouter des cartes choroplèthes par limites administratives (GeoJSON).
@@ -181,6 +192,8 @@ server.js        connexion ODK par utilisateur, proxy OData, cache, visualisatio
 xform.js         lecture des libellés du XForm (questions, choix, langues) et des CSV joints
 cache.js         cache des données : mémoire LRU + fichiers gzip, une requête à la fois par donnée
 public/transforms.js  moteur du formateur (conversions, classes, regroupements, dates, formules)
+public/aide.html  guide d'utilisation (+ captures dans public/aide/)
+ROADMAP-CONNECTEURS.md  plan des connecteurs IASO, DHIS2, CommCare, mSupply
 demo-data.js     données de démonstration
 public/          index.html, app.js (connexion, mise en page, agrégation, graphiques), styles.css
 .env.example     réglages facultatifs
