@@ -15,19 +15,19 @@
   <div class="login-wrap">
     <div class="intro">
       <div class="intro-brand"><span class="logo">◧</span> ODK Visualizer</div>
-      <h1>Vos données ODK en graphiques, tableaux et cartes, en quelques clics.</h1>
-      <p class="intro-lead">ODK Visualizer lit directement les soumissions de vos formulaires <b>ODK Central</b> et les transforme en visualisations, sans export Excel ni code. Le principe est celui du <i>Data Visualizer</i> de DHIS2 : vous glissez des champs, vous choisissez un type de graphique, vous enregistrez et partagez.</p>
+      <h1>Vos données de collecte en graphiques, tableaux et cartes, en quelques clics.</h1>
+      <p class="intro-lead">ODK Visualizer lit directement les soumissions de vos formulaires <b>ODK Central</b>, <b>IASO</b> (Bluesquare) ou <b>CommCare</b> et les transforme en visualisations, sans export Excel ni code. Le principe est celui du <i>Data Visualizer</i> de DHIS2 : vous glissez des champs, vous choisissez un type de graphique, vous enregistrez et partagez.</p>
       <ul class="intro-features">
         <li><span class="ico"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2" /></svg></span><div><b>23 types de visualisation</b><span>Colonnes, courbes, tableaux croisés, Sankey, treemap, jauges, calendrier…</span></div></li>
-        <li><span class="ico"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 4 3 6v14l6-2 6 2 6-2V4l-6 2-6-2zM9 4v14M15 6v14"/></svg></span><div><b>Cartes des points GPS</b><span>Les ménages, sites ou structures enquêtés sur une carte, colorés selon un champ.</span></div></li>
+        <li><span class="ico"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 4 3 6v14l6-2 6 2 6-2V4l-6 2-6-2zM9 4v14M15 6v14"/></svg></span><div><b>Cartes et hiérarchie</b><span>Les points GPS sur une carte ; avec IASO, les résultats par région, district ou formation sanitaire.</span></div></li>
         <li><span class="ico"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12V4h8l10 10-8 8L3 12z"/><circle cx="7.5" cy="7.5" r="1.5"/></svg></span><div><b>Les libellés de vos formulaires</b><span>Questions et choix du XLSForm, dans toutes ses langues, répétitions comprises.</span></div></li>
         <li><span class="ico"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 4h-2a3 3 0 0 0-3 3v13M7 11h7M14 14l6 6M20 14l-6 6"/></svg></span><div><b>Champs calculés et regroupements</b><span>Classes d'âge, formules, durées, recodages… sans modifier le formulaire.</span></div></li>
         <li><span class="ico"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M13 2 4 14h7l-1 8 9-12h-7l1-8z"/></svg></span><div><b>Rapide, même pour les gros formulaires</b><span>Seules les nouvelles soumissions sont téléchargées à chaque mise à jour.</span></div></li>
-        <li><span class="ico"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg></span><div><b>Vos droits ODK sont respectés</b><span>Chacun ne voit que les projets autorisés pour son propre compte.</span></div></li>
+        <li><span class="ico"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg></span><div><b>Vos droits sont respectés</b><span>Chacun se connecte avec son propre compte et ne voit que ce qu'il est autorisé à voir.</span></div></li>
       </ul>
       <div class="intro-steps">
         <b>Comment ça marche ?</b>
-        <ol><li>Connectez-vous avec votre compte ODK Central</li><li>Choisissez un projet et un formulaire</li><li>Glissez des champs en <i>Lignes</i> et <i>Colonnes</i>, choisissez un graphique</li></ol>
+        <ol><li>Choisissez votre plateforme et connectez-vous avec votre compte</li><li>Choisissez un projet et un formulaire</li><li>Glissez des champs en <i>Lignes</i> et <i>Colonnes</i>, choisissez un graphique</li></ol>
       </div>
       <div class="intro-links">
         <a class="intro-jump" href="#loginForm">Se connecter ↓</a>
@@ -36,30 +36,32 @@
     </div>
     <form id="loginForm" class="login-card" autocomplete="on">
       <div class="login-brand">Connexion</div>
-      <p class="login-sub">Connectez-vous avec votre compte <b>ODK Central</b>. Vous verrez uniquement les projets auxquels votre compte a accès.</p>
+      <div id="platformTabs" class="platform-tabs" role="radiogroup" aria-label="Plateforme de collecte" hidden></div>
+      <p class="login-sub" id="loginSub">Connectez-vous avec votre compte <b>ODK Central</b>. Vous verrez uniquement les projets auxquels votre compte a accès.</p>
       <p id="loginMsg" class="login-msg" hidden></p>
 
-      <label id="serverWrap">Serveur ODK Central
-        <input id="loginServer" name="server" type="text" inputmode="url" list="recentServers" placeholder="https://central.monorg.org" required>
+      <label id="serverWrap"><span id="serverLabel">Serveur ODK Central</span>
+        <input id="loginServer" name="server" type="text" inputmode="url" list="recentServers" placeholder="https://central.monorg.org" autocomplete="url" required>
         <datalist id="recentServers"></datalist>
-        <small>L'adresse que vous utilisez pour ouvrir ODK Central dans le navigateur.</small>
+        <small id="serverHelp">L'adresse que vous utilisez pour ouvrir ODK Central dans le navigateur.</small>
       </label>
       <div id="serverLocked" class="locked" hidden></div>
 
-      <label>E-mail
+      <label><span id="userLabel">E-mail</span>
         <input id="loginEmail" name="email" type="email" autocomplete="username" required>
       </label>
-      <label>Mot de passe
+      <label><span id="pwLabel">Mot de passe</span>
         <span class="pw">
           <input id="loginPassword" name="password" type="password" autocomplete="current-password" required>
           <button type="button" id="togglePw" class="link" aria-label="Afficher le mot de passe">Afficher</button>
         </span>
+        <small id="pwHelp" hidden></small>
       </label>
-      <label class="check"><input type="checkbox" id="rememberServer" checked> Mémoriser ce serveur et cet e-mail sur cet appareil</label>
+      <label class="check"><input type="checkbox" id="rememberServer" checked> <span id="rememberLabel">Mémoriser ce serveur et cet e-mail sur cet appareil</span></label>
 
       <button type="submit" id="loginBtn" class="primary">Se connecter</button>
       <button type="button" id="demoBtn" class="ghost wide">Essayer avec des données de démonstration</button>
-      <p class="login-foot">Le mot de passe est transmis uniquement à votre serveur ODK Central et n'est jamais enregistré.<br><a href="aide.html#connexion" target="_blank" rel="noopener">Besoin d'aide pour vous connecter ?</a></p>
+      <p class="login-foot"><span id="loginFoot">Le mot de passe est transmis uniquement à votre serveur ODK Central et n'est jamais enregistré.</span><br><a href="aide.html#connexion" target="_blank" rel="noopener">Besoin d'aide pour vous connecter ?</a></p>
     </form>
   </div>
   </section>
@@ -107,10 +109,10 @@
         <label>Formulaire <select id="form"></select></label>
         <label>Table <select id="table"></select></label>
         <div class="row2">
-          <label>Soumis du <input type="date" id="from"></label>
+          <label><span id="fromLabel">Soumis du</span> <input type="date" id="from"></label>
           <label>au <input type="date" id="to"></label>
         </div>
-        <label>État de revue
+        <label id="reviewWrap">État de revue
           <select id="reviewState">
             <option value="">Toutes les soumissions</option>
             <option value="null,approved,edited,hasIssues">Exclure les rejetées</option>

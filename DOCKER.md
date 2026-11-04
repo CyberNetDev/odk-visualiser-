@@ -10,7 +10,9 @@ docker compose ps            # doit afficher "healthy"
 docker compose logs -f       # journaux
 ```
 
-Ouvrir `http://IP-DU-SERVEUR:3000`. L'écran de connexion demande l'**adresse du serveur ODK Central**, l'**e-mail** et le **mot de passe**. Aucun identifiant n'est à mettre dans un fichier.
+Ouvrir `http://IP-DU-SERVEUR:3000`. L'écran de connexion demande la **plateforme** (ODK Central, IASO ou CommCare), l'**adresse du serveur**, l'**identifiant** et le **mot de passe** (ou la clé API pour CommCare). Aucun identifiant n'est à mettre dans un fichier.
+
+Le conteneur doit pouvoir joindre les serveurs choisis par les utilisateurs en HTTPS sortant (par ex. `iaso.bluesquare.org`, `www.commcarehq.org`).
 
 ## 2. Réglages facultatifs
 
@@ -18,9 +20,10 @@ Le fichier `.env` n'est pas obligatoire. Pour l'utiliser : `cp .env.example .env
 
 | Variable | Rôle |
 |---|---|
-| `ODK_DEFAULT_URL` | Serveur pré-rempli sur l'écran de connexion |
-| `ODK_LOCK_URL=true` | Impose ce serveur : l'utilisateur saisit seulement e-mail et mot de passe |
-| `ALLOWED_SERVERS` | Liste blanche de serveurs Central autorisés (séparés par des virgules) |
+| `PLATFORMS` | Plateformes proposées : `odk,iaso,commcare` (défaut), ou une partie seulement |
+| `ODK_DEFAULT_URL` / `IASO_DEFAULT_URL` / `COMMCARE_DEFAULT_URL` | Serveur pré-rempli pour chaque plateforme |
+| `ODK_LOCK_URL=true` (idem `IASO_LOCK_URL`, `COMMCARE_LOCK_URL`) | Impose ce serveur : l'utilisateur saisit seulement identifiant et mot de passe |
+| `ALLOWED_SERVERS` | Liste blanche de serveurs autorisés, toutes plateformes (séparés par des virgules) |
 | `ALLOW_DEMO=false` | Masque le bouton « données de démonstration » |
 | `HOST_PORT` | Port publié sur le serveur (défaut 3000) |
 | `CACHE_MINUTES` | Fraîcheur du cache (défaut 5 min) ; au-delà, mise à jour en arrière-plan |

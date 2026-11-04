@@ -5,7 +5,7 @@ services:
     container_name: odk-visualizer
     restart: unless-stopped
     init: true
-    env_file:                 # facultatif : réglages (aucun identifiant ODK n'y est nécessaire)
+    env_file:                 # facultatif : réglages (aucun identifiant n'y est nécessaire)
       - path: .env
         required: false
     environment:

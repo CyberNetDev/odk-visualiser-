@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Guide d'utilisation — ODK Visualizer</title>
-  <meta name="description" content="Comment utiliser ODK Visualizer : connexion, premier graphique, types de visualisation, filtres, libellés, répétitions, formateur de champs, enregistrement et partage.">
+  <meta name="description" content="Comment utiliser ODK Visualizer avec ODK Central, IASO et CommCare : connexion, premier graphique, types de visualisation, filtres, libellés, répétitions, formateur de champs, enregistrement et partage.">
   <style>
     :root { --bg: #f4f6f8; --panel: #fff; --ink: #1f2933; --muted: #637381; --line: #dfe3e8; --accent: #1565c0; --accent-soft: #e3eefb; --warn: #8a6100; --warn-bg: #fff3cd; --mark: #f57c00; }
     * { box-sizing: border-box; }
@@ -106,7 +106,7 @@
 <main>
 <section id="presentation">
   <h1>À quoi sert ODK Visualizer ?</h1>
-  <p class="lead">ODK Visualizer transforme les soumissions de vos formulaires <b>ODK Central</b> en graphiques, tableaux croisés et cartes, directement dans le navigateur. Il n'y a ni export Excel ni code à écrire.</p>
+  <p class="lead">ODK Visualizer transforme les soumissions de vos formulaires <b>ODK Central</b>, <b>IASO</b> (Bluesquare) ou <b>CommCare</b> (Dimagi) en graphiques, tableaux croisés et cartes, directement dans le navigateur. Il n'y a ni export Excel ni code à écrire.</p>
   <p>Le fonctionnement s'inspire du <i>Data Visualizer</i> de DHIS2 :</p>
   <ul>
     <li>vous placez des <b>champs</b> du formulaire en <b>Colonnes</b>, en <b>Lignes</b> ou en <b>Filtre</b> ;</li>
@@ -115,23 +115,50 @@
     <li>vous pouvez ensuite <b>enregistrer</b> la visualisation, la <b>partager</b> par un lien et la <b>télécharger</b> (image ou tableau).</li>
   </ul>
   <div class="grid2">
-    <div><h3>Pour qui ?</h3><p>Les gestionnaires de données, les superviseurs, les coordinateurs de projet et les partenaires qui ont un compte ODK Central et veulent suivre les résultats d'une enquête sans manipuler de fichiers.</p></div>
-    <div><h3>Ce que l'outil ne fait pas</h3><p>Il ne modifie jamais vos données ni vos formulaires dans ODK Central : il les <b>lit</b> seulement. Les champs calculés et les regroupements que vous créez n'existent que dans ODK Visualizer.</p></div>
+    <div><h3>Pour qui ?</h3><p>Les gestionnaires de données, les superviseurs, les coordinateurs de projet et les partenaires qui ont un compte sur ODK Central, IASO ou CommCare HQ et veulent suivre les résultats d'une enquête sans manipuler de fichiers.</p></div>
+    <div><h3>Ce que l'outil ne fait pas</h3><p>Il ne modifie jamais vos données ni vos formulaires sur la plateforme : il les <b>lit</b> seulement. Les champs calculés et les regroupements que vous créez n'existent que dans ODK Visualizer.</p></div>
   </div>
 </section>
 
 <section id="connexion">
   <h2>Se connecter</h2>
+  <p>En haut du cadre de connexion, choisissez d'abord votre <b>plateforme</b> : <b>ODK Central</b>, <b>IASO</b> ou <b>CommCare</b>. Les champs à remplir s'adaptent. Selon l'installation, une seule plateforme peut être proposée.</p>
+  <h3 id="connexion-odk">ODK Central</h3>
   <ol class="steps">
     <li><b>Serveur ODK Central</b> : l'adresse que vous utilisez pour ouvrir Central dans votre navigateur, par exemple <code>https://central.monorg.org</code>. Vous pouvez coller l'adresse complète d'une page de Central : elle est nettoyée automatiquement. Sur certaines installations, ce champ est déjà rempli et ne peut pas être modifié.</li>
     <li><b>E-mail et mot de passe</b> : ceux de votre <b>compte web ODK Central</b>, celui qui vous sert à vous connecter à Central dans le navigateur.</li>
     <li>Cliquez sur <b>Se connecter</b>. Vous ne voyez que les projets et formulaires autorisés pour votre compte.</li>
   </ol>
   <div class="warn">Les « utilisateurs mobiles » d'ODK Collect (ceux qui se connectent avec un QR code) ne peuvent pas se connecter. Il faut un compte web Central avec un rôle qui permet de voir les soumissions : <b>Administrateur</b>, <b>Gestionnaire de projet</b>, <b>Lecteur de projet</b> ou <b>Gestionnaire de données</b>. Le rôle <b>Collecteur de données</b> ne suffit pas.</div>
+
+  <h3 id="connexion-iaso">IASO (Bluesquare)</h3>
+  <ol class="steps">
+    <li><b>Serveur IASO</b> : l'adresse de votre tableau de bord, par exemple <code>https://iaso.bluesquare.org</code>. Vous pouvez coller l'adresse d'une page du tableau de bord (<code>…/dashboard/…</code>) : elle est nettoyée.</li>
+    <li><b>Nom d'utilisateur et mot de passe</b> : ceux de votre compte IASO. Le compte doit avoir le droit de consulter les <b>soumissions</b>.</li>
+  </ol>
+  <p>Ce qu'IASO apporte en plus :</p>
   <ul>
-    <li>Votre mot de passe est transmis à votre serveur ODK Central et n'est <b>jamais enregistré</b> par l'application.</li>
-    <li>La session dure aussi longtemps que celle de Central (24 heures par défaut). Quand elle expire, l'écran de connexion réapparaît.</li>
-    <li>Le menu à votre nom, en haut à droite, permet de <b>changer de serveur ou de compte</b> et de <b>se déconnecter</b>.</li>
+    <li>le groupe <b>Unité d'organisation et hiérarchie</b> dans la liste des champs : l'unité d'organisation de chaque soumission, son type, et un champ par <b>niveau de la pyramide</b> (par exemple <i>Niveau 2 · Région</i>, <i>Niveau 3 · District</i>). Placez un niveau en <i>Lignes</i> pour obtenir les résultats par région ou par district ;</li>
+    <li>la <b>position de l'unité d'organisation</b>, utilisable sur une carte même si la soumission n'a pas de point GPS ;</li>
+    <li>la <b>période</b>, le <b>statut</b> et le <b>statut de validation</b> de chaque soumission.</li>
+  </ul>
+  <figure><img src="aide/iaso-hierarchie.png" width="1366" height="860" alt="Graphique en colonnes : nombre de ménages par milieu (urbain, rural) et par département, à partir du champ « Niveau 2 · Département » d'IASO" loading="lazy"><figcaption>Avec IASO : le champ <i>Niveau 2 · Département</i> en Colonnes et <i>Milieu</i> en Lignes donnent les ménages par département.</figcaption></figure>
+  <p>Vous ne voyez que les soumissions des unités d'organisation autorisées pour votre compte, exactement comme dans IASO. Le filtre de dates porte sur la <b>date de création</b> de la soumission.</p>
+  <div class="note">IASO conserve les répétitions de premier niveau (par exemple les membres d'un ménage). Une répétition placée <i>dans</i> une autre répétition est aplatie par IASO, qui ne garde que sa dernière ligne : elle apparaît comme un groupe de champs de la répétition parente.</div>
+
+  <h3 id="connexion-commcare">CommCare HQ (Dimagi)</h3>
+  <ol class="steps">
+    <li><b>Serveur CommCare HQ</b> : <code>https://www.commcarehq.org</code> pour la plupart des projets, <code>https://eu.commcarehq.org</code> ou <code>https://india.commcarehq.org</code> pour les serveurs régionaux, ou l'adresse de votre propre serveur.</li>
+    <li><b>E-mail</b> : celui de votre <b>compte web</b> CommCare HQ (pas un utilisateur mobile).</li>
+    <li><b>Clé API ou mot de passe</b> : une <b>clé API</b> est conseillée, et obligatoire si votre compte utilise la double authentification ou le SSO. Pour la créer : CommCare HQ → menu de votre compte → <i>Paramètres du compte</i> → <i>Clés API</i>.</li>
+  </ol>
+  <p>Les <b>projets</b> sont vos espaces de projet CommCare ; les <b>formulaires</b> apparaissent sous la forme <i>Application › Module › Formulaire</i>, avec les libellés de la dernière version de l'application. Le compte doit avoir les droits <b>Accès à l'API</b> et <b>Modifier les données</b> (exigés par l'API de CommCare). Le filtre de dates porte sur la <b>date de réception</b> par le serveur ; les champs <i>Début de saisie</i> et <i>Fin de saisie</i> permettent de calculer une durée avec le formateur.</p>
+
+  <h3>Pour toutes les plateformes</h3>
+  <ul>
+    <li>Votre mot de passe (ou votre clé API) est transmis uniquement à votre plateforme et n'est <b>jamais enregistré</b> par l'application. Pendant la session, le serveur ne garde que le jeton de session en mémoire (la clé API pour CommCare).</li>
+    <li>La session dure aussi longtemps que celle de Central (24 heures par défaut), et 12 heures pour IASO et CommCare. Quand elle expire, l'écran de connexion réapparaît.</li>
+    <li>Le menu à votre nom, en haut à droite, rappelle la plateforme et le serveur, et permet de <b>changer de serveur ou de compte</b> et de <b>se déconnecter</b>.</li>
     <li>Le bouton <b>Essayer avec des données de démonstration</b> ouvre une enquête fictive (1 200 ménages) pour découvrir l'outil sans compte. Il peut être désactivé par l'administrateur.</li>
   </ul>
 </section>
@@ -227,7 +254,7 @@
 <section id="filtres">
   <h2>Période et filtres</h2>
   <ul>
-    <li><b>Soumis du… au…</b> limite les données à une période de <b>soumission</b>. Le filtre est appliqué par ODK Central, donc moins de données sont téléchargées.</li>
+    <li><b>Soumis du… au…</b> limite les données à une période : date de <b>soumission</b> (ODK Central), de <b>création</b> (IASO) ou de <b>réception</b> (CommCare). Le filtre est appliqué par la plateforme, donc moins de données sont téléchargées. Le filtre <b>État de revue</b> n'existe que pour ODK Central.</li>
     <li><b>État de revue</b> : toutes les soumissions, sans les rejetées, ou seulement les approuvées.</li>
     <li><b>Filtre sur un champ</b> : placez le champ dans <b>Filtre</b> et cochez les valeurs à garder. Le filtre apparaît dans le rappel sous le titre et sur les images téléchargées.</li>
     <li><b>Choix multiples</b> : un ménage qui a coché « paludisme » et « toux » compte dans les deux catégories. Le total peut donc dépasser le nombre de ménages. Ce comportement se désactive en cliquant sur le champ placé.</li>
@@ -297,8 +324,8 @@
   <h2>Enregistrer, partager, télécharger</h2>
   <ul>
     <li><b>Enregistrer</b> garde la mise en page, le type, les filtres, les options et le titre. <b>Enregistrer sous…</b> crée une copie.</li>
-    <li><b>Ouvrir</b> liste les visualisations enregistrées sur votre serveur ODK pour les projets auxquels vous avez accès.</li>
-    <li><b>Partager</b> : une visualisation enregistrée a une adresse propre (se terminant par <code>#/…</code>). Copiez-la depuis la barre d'adresse. La personne qui l'ouvre doit avoir accès au projet dans ODK Central.</li>
+    <li><b>Ouvrir</b> liste les visualisations enregistrées sur votre serveur (ODK Central, IASO ou CommCare) pour les projets auxquels vous avez accès.</li>
+    <li><b>Partager</b> : une visualisation enregistrée a une adresse propre (se terminant par <code>#/…</code>). Copiez-la depuis la barre d'adresse. La personne qui l'ouvre doit se connecter au même serveur et avoir accès au projet.</li>
     <li>Seul l'auteur peut modifier ou supprimer une visualisation. Les autres utilisateurs peuvent l'ouvrir, puis l'<b>enregistrer sous</b> un autre nom.</li>
   </ul>
   <h3>Télécharger</h3>
@@ -322,7 +349,7 @@
     <tr><td><kbd>P</kbd></td><td>Masquer / afficher le panneau latéral</td></tr>
     <tr><td><kbd>Échap</kbd></td><td>Quitter le plein écran, fermer une fenêtre</td></tr>
     <tr><td><kbd>?</kbd></td><td>Ouvrir ce guide</td></tr>
-    <tr><td><kbd>Maj</kbd> + clic sur « actualiser »</td><td>Tout recharger depuis ODK Central</td></tr>
+    <tr><td><kbd>Maj</kbd> + clic sur « actualiser »</td><td>Tout recharger depuis la plateforme</td></tr>
   </table>
   <p>Les raccourcis ne s'activent pas pendant que vous écrivez dans un champ de texte.</p>
   <div class="note">Sur iPhone, le navigateur ne permet pas le vrai plein écran : le graphique occupe alors toute la fenêtre. Tournez le téléphone à l'horizontale pour plus de place.</div>
@@ -333,7 +360,7 @@
   <p>Pour aller vite, même avec des dizaines de milliers de soumissions, le serveur de l'application garde une copie des données téléchargées. C'est le <b>cache</b>. L'étiquette sous les filtres indique l'état :</p>
   <table>
     <tr><th>Étiquette</th><th>Signification</th></tr>
-    <tr><td><span class="tag num">à jour</span></td><td>Les données viennent d'être vérifiées auprès d'ODK Central</td></tr>
+    <tr><td><span class="tag num">à jour</span></td><td>Les données viennent d'être vérifiées auprès de la plateforme</td></tr>
     <tr><td><span class="tag sel">cache</span></td><td>Copie récente (moins de quelques minutes), affichée immédiatement</td></tr>
     <tr><td><span class="tag" style="background:var(--warn-bg);color:var(--warn)">mise à jour…</span></td><td>Copie affichée tout de suite ; la mise à jour se fait en arrière-plan et le graphique se rafraîchit tout seul</td></tr>
   </table>
@@ -341,32 +368,39 @@
     <li><b>↻ actualiser</b> ne télécharge que les soumissions nouvelles ou modifiées : c'est rapide. <kbd>Maj</kbd> + clic recharge tout.</li>
     <li>Le <b>premier chargement</b> d'un très gros formulaire peut prendre une minute. Les suivants sont rapides.</li>
     <li>Le menu à votre nom → <b>Cache des données</b> montre ce qui est en mémoire et permet de le vider.</li>
+    <li>Avec <b>ODK Central</b>, le cache d'un formulaire est partagé entre les utilisateurs du même serveur, après vérification des droits de chacun. Avec <b>IASO</b> et <b>CommCare</b>, il est propre à chaque compte, car ces plateformes limitent les soumissions visibles selon l'utilisateur.</li>
   </ul>
 </section>
 
 <section id="faq">
   <h2>Questions fréquentes</h2>
-  <details><summary>Je ne vois pas mon projet ou mon formulaire</summary><p>L'application montre exactement ce que votre compte ODK Central peut voir. Demandez à l'administrateur de Central de vous donner un rôle sur ce projet : <i>Lecteur de projet</i> suffit. Vérifiez aussi que le formulaire est <b>publié</b> : les brouillons n'apparaissent pas.</p></details>
+  <details><summary>Je ne vois pas mon projet ou mon formulaire</summary><p>L'application montre exactement ce que votre compte peut voir. <b>ODK Central</b> : demandez à l'administrateur de vous donner un rôle sur ce projet (<i>Lecteur de projet</i> suffit) et vérifiez que le formulaire est <b>publié</b> : les brouillons n'apparaissent pas. <b>IASO</b> : le formulaire doit être rattaché au projet et votre compte doit avoir le droit « Soumissions ». <b>CommCare</b> : seuls les formulaires de la dernière version des applications sont listés ; une application supprimée n'apparaît plus.</p></details>
+  <details><summary>IASO : je vois moins de soumissions que mon collègue</summary><p>C'est normal si vos comptes sont rattachés à des unités d'organisation différentes : IASO limite les soumissions visibles selon l'utilisateur, et l'application respecte cette limite (le cache est propre à chaque compte).</p></details>
+  <details><summary>CommCare : « Identifiant ou clé API incorrects »</summary><p>Vérifiez que vous utilisez l'<b>e-mail de votre compte web</b> CommCare HQ et une <b>clé API</b> valide (elles peuvent expirer ou être limitées à un projet). Avec la double authentification ou le SSO, le mot de passe ne fonctionne pas : il faut une clé API. Vérifiez aussi le serveur (www, eu ou india).</p></details>
+  <details><summary>CommCare : « pas accès à ces données »</summary><p>L'API de CommCare exige les droits <b>Accès à l'API</b> et <b>Modifier les données</b> sur le projet. Demandez-les à l'administrateur du projet CommCare.</p></details>
   <details><summary>« E-mail ou mot de passe incorrect » alors que j'utilise ODK Collect sans problème</summary><p>ODK Collect utilise un <b>utilisateur mobile</b> (QR code), qui ne peut pas se connecter ici. Il vous faut un <b>compte web</b> ODK Central, celui qui sert à ouvrir Central dans un navigateur.</p></details>
   <details><summary>Le graphique affiche « Aucune donnée pour cette sélection »</summary><p>Vérifiez la période (<b>Soumis du… au…</b>), l'<b>état de revue</b> et les valeurs cochées dans les champs placés en <b>Filtre</b>. Un filtre trop strict peut tout exclure.</p></details>
   <details><summary>Je vois des codes (<code>protected_well</code>) au lieu des libellés</summary><p>Vérifiez que l'option <b>Libellés</b> n'est pas sur « Valeurs brutes ». Si le problème persiste, les libellés n'ont pas pu être lus pour ce formulaire, ou la valeur vient d'une ancienne version du formulaire qui n'existe plus dans la liste de choix.</p></details>
-  <details><summary>Mes chiffres sont différents de ceux d'ODK Central</summary><p>Plusieurs causes possibles :</p><ul><li>Les données datent de quelques minutes : cliquez sur <b>actualiser</b>.</li><li>Les <b>choix multiples</b> comptent chaque option cochée.</li><li>Sur une table répétée, on compte des lignes et non des soumissions.</li><li>Les filtres de période et d'état de revue sont actifs.</li></ul></details>
+  <details><summary>Mes chiffres sont différents de ceux de la plateforme</summary><p>Plusieurs causes possibles :</p><ul><li>Les données datent de quelques minutes : cliquez sur <b>actualiser</b>.</li><li>Les <b>choix multiples</b> comptent chaque option cochée.</li><li>Sur une table répétée, on compte des lignes et non des soumissions.</li><li>Les filtres de période et d'état de revue sont actifs.</li><li>IASO et CommCare n'envoient pas les soumissions supprimées ou archivées.</li></ul></details>
   <details><summary>Je ne peux pas modifier une visualisation ou un champ transformé</summary><p>Seul son auteur peut le modifier. Utilisez <b>Enregistrer sous…</b> pour en faire votre propre copie. Pour un champ transformé, l'enregistrement propose de créer une copie.</p></details>
   <details><summary>Le premier affichage d'un formulaire est lent</summary><p>C'est normal pour un gros formulaire : toutes les soumissions sont téléchargées une première fois. Ensuite, seules les nouveautés le sont, et les autres utilisateurs profitent de la même copie.</p></details>
-  <details><summary>On me demande de me reconnecter</summary><p>Votre session ODK Central a expiré (24 heures par défaut) ou l'application a été redémarrée. Reconnectez-vous : vos visualisations enregistrées sont conservées.</p></details>
+  <details><summary>On me demande de me reconnecter</summary><p>Votre session a expiré (24 heures par défaut avec ODK Central, 12 heures avec IASO et CommCare), votre clé API a été révoquée, ou l'application a été redémarrée. Reconnectez-vous : vos visualisations enregistrées sont conservées.</p></details>
 </section>
 
 <section id="glossaire">
   <h2>Glossaire</h2>
   <table>
     <tr><th>Terme</th><th>Définition</th><th>Équivalent DHIS2</th></tr>
-    <tr><td>Soumission</td><td>Un formulaire rempli et envoyé à ODK Central</td><td>Événement</td></tr>
+    <tr><td>Soumission</td><td>Un formulaire rempli et envoyé à la plateforme (ODK Central, IASO, CommCare)</td><td>Événement</td></tr>
     <tr><td>Champ</td><td>Une question du formulaire, ou un champ transformé</td><td>Élément de données</td></tr>
     <tr><td>Choix</td><td>Une réponse possible d'une question à choix</td><td>Option</td></tr>
     <tr><td>Groupe répété</td><td>Partie du formulaire remplie plusieurs fois (membres, visites…)</td><td>Section répétable</td></tr>
     <tr><td>Champ parent (↑)</td><td>Champ de la soumission à laquelle appartient une répétition</td><td>—</td></tr>
     <tr><td>Période</td><td>Regroupement des dates : jour, semaine, mois, trimestre, année</td><td>Période</td></tr>
     <tr><td>Champ de lieu</td><td>Région, district, formation sanitaire… placés en Lignes ou en Filtre</td><td>Unité d'organisation</td></tr>
+    <tr><td>Unité d'organisation (IASO)</td><td>Lieu auquel une soumission IASO est rattachée, avec ses niveaux de pyramide (pays, région, district…)</td><td>Unité d'organisation</td></tr>
+    <tr><td>Espace de projet (CommCare)</td><td>Le « projet » CommCare HQ, qui contient les applications et leurs formulaires</td><td>—</td></tr>
+    <tr><td>Clé API (CommCare)</td><td>Code secret à créer dans CommCare HQ, à utiliser à la place du mot de passe</td><td>Jeton d'accès personnel</td></tr>
     <tr><td>Visualisation enregistrée</td><td>Mise en page, filtres et type gardés sous un nom</td><td>Favori</td></tr>
     <tr><td>Libellé</td><td>Texte affiché d'une question ou d'un choix, dans une langue du formulaire</td><td>Nom</td></tr>
     <tr><td>Cache</td><td>Copie des données gardée par le serveur pour aller plus vite</td><td>Tables d'analyse</td></tr>

@@ -1,6 +1,7 @@
 /* ODK Visualizer — frontend.
    Layout model follows the DHIS2 Data Visualizer: Columns (series) × Rows (category) + Filter,
-   with a value (count / sum / avg / ...) aggregated in the browser from the ODK OData feed.
+   with a value (count / sum / avg / ...) aggregated in the browser from the submissions of ODK Central,
+   IASO or CommCare (the server turns every platform's records into the row shape of ODK's OData feed).
    Extra chart types are modelled on Apache Superset's gallery (big number + trendline, gauge,
    heatmap, treemap, sunburst, funnel, radar, box plot, histogram, scatter, calendar, sankey, rose). */
 
@@ -52,7 +53,7 @@ const VIS = [
 ];
 
 let state = blankState();
-let allFields = [];      // fields from ODK for the current form
+let allFields = [];      // fields of the current form (from the platform, + metadata fields)
 let fields = [];         // fields usable for the current table (incl. joined parent fields)
 let fieldMap = new Map();
 let tables = [];         // OData tables of the form
@@ -1130,7 +1131,7 @@ document.addEventListener('mousedown', e => {
 function groupOf(f) {
   let own;
   if (f.derived) own = 'ƒ Champs transformés';
-  else if (f.system) own = 'Métadonnées de soumission';
+  else if (f.system) own = f.group || 'Métadonnées de soumission';
   else {
     const segs = f.labelPath.split('/').slice(0, -1);
     // the repeat prefix of the field's own table is not a sub-group
@@ -1174,11 +1175,17 @@ function renderVisTypeOptions() {
   const groups = [...new Set(VIS.map(v => v.group))];
   $('#visType').innerHTML = groups.map(g => `<optgroup label="${esc(g)}">${VIS.filter(v => v.group === g).map(v => `<option value="${v.id}">${esc(v.label)}${v.superset ? '  ✦' : ''}</option>`).join('')}</optgroup>`).join('');
 }
+// XLSForm languages are already readable ("Français (fr)"); CommCare uses codes ("fr", "por")
+function langName(l) {
+  if (!/^[a-z]{2,3}(-[A-Za-z]{2,4})?$/.test(l)) return l;
+  try { const n = new Intl.DisplayNames(['fr'], { type: 'language' }).of(l); if (n && n !== l) return `${n[0].toUpperCase()}${n.slice(1)} (${l})`; } catch { /* old browser */ }
+  return l;
+}
 function renderLangOptions() {
   const langs = labels?.languages || [];
   const hasLabels = labels && (Object.keys(labels.fields || {}).length || Object.keys(labels.choices || {}).length);
   const opts = langs.length
-    ? langs.map(l => `<option value="${l === labels.defaultLang ? '' : esc(l)}">${esc(l)}</option>`)
+    ? langs.map(l => `<option value="${l === labels.defaultLang ? '' : esc(l)}">${esc(langName(l))}</option>`)
     : [`<option value="">${hasLabels ? 'Du formulaire' : 'Lisibles'}</option>`];
   $('#optLang').innerHTML = opts.join('') + '<option value="__raw">Valeurs brutes</option>';
 }
@@ -1310,9 +1317,11 @@ function baseFieldsOf(t) {
   const repeats = allFields.filter(f => f.repeat).map(f => f.path);
   const owner = p => repeats.filter(r => p.startsWith(r + '/')).sort((a, b) => b.length - a.length)[0] || '';
   const pre = t === 'Submissions' ? '' : repeatPath(t);
-  const list = allFields.filter(f => !f.repeat && owner(f.path) === pre)
+  const list = allFields.filter(f => !f.repeat && !f.system && owner(f.path) === pre)
     .map(f => ({ ...f, path: pre ? f.path.slice(pre.length + 1) : f.path, labelPath: f.path, tablePrefix: pre }));
-  return t === 'Submissions' ? [...list, ...SYSTEM_FIELDS.map(f => ({ ...f, labelPath: f.path }))] : list;
+  // metadata fields come from the server (they differ per platform); older servers: the ODK list
+  const sys = allFields.some(f => f.system) ? allFields.filter(f => f.system) : SYSTEM_FIELDS;
+  return t === 'Submissions' ? [...list, ...sys.map(f => ({ ...f, labelPath: f.path }))] : list;
 }
 function derivedFieldsOf(t) {
   const pre = t === 'Submissions' ? '' : repeatPath(t);
@@ -1770,7 +1779,7 @@ function renderStatus() {
   const label = { busy: 'mise à jour…', cached: 'cache', fresh: 'à jour' }[st];
   $('#cacheState').className = `cache-state ${st}`;
   $('#cacheState').textContent = `${label} · ${hhmm(checked)}`;
-  $('#cacheState').title = `Vérifié auprès d'ODK Central à ${new Date(checked).toLocaleTimeString('fr-FR')}\nDonnées modifiées pour la dernière fois : ${new Date(changed).toLocaleString('fr-FR')}\n${st === 'cached' ? 'Servi depuis le cache du serveur.' : st === 'busy' ? 'Servi depuis le cache ; une mise à jour est en cours en arrière-plan.' : ''}\nCliquez sur « actualiser » pour ne charger que les nouveautés (Maj+clic : tout recharger).`;
+  $('#cacheState').title = `Vérifié auprès de ${platformName()} à ${new Date(checked).toLocaleTimeString('fr-FR')}\nDonnées modifiées pour la dernière fois : ${new Date(changed).toLocaleString('fr-FR')}\n${st === 'cached' ? 'Servi depuis le cache du serveur.' : st === 'busy' ? 'Servi depuis le cache ; une mise à jour est en cours en arrière-plan.' : ''}\nCliquez sur « actualiser » pour ne charger que les nouveautés (Maj+clic : tout recharger).`;
 }
 
 // ------------------------------------------------------------------ cache panel
@@ -1788,7 +1797,7 @@ async function openCachePanel() {
     const t = info.totals, set = info.settings;
     dlg.innerHTML = `<form method="dialog" class="cache-form">
       <header><h3>Cache des données</h3>
-        <p class="fx-help">Les téléchargements depuis ODK Central sont gardés ${t.persist ? 'en mémoire et sur le disque du serveur (compressés)' : 'en mémoire'} et partagés entre les utilisateurs du même serveur, après vérification des droits de chacun.
+        <p class="fx-help">Les téléchargements depuis ${esc(set.platform || platformName())} sont gardés ${t.persist ? 'en mémoire et sur le disque du serveur (compressés)' : 'en mémoire'}${set.perUser ? ' et réservés à votre compte : cette plateforme limite les soumissions visibles selon chaque utilisateur.' : ' et partagés entre les utilisateurs du même serveur, après vérification des droits de chacun.'}
         Les données de moins de <b>${set.freshMinutes} min</b> sont servies directement ; au-delà, elles s'affichent tout de suite puis se mettent à jour en arrière-plan.
         Une mise à jour ne télécharge que les soumissions nouvelles ou modifiées${set.incremental ? '' : ' <span class="bad">(non disponible sur ce serveur : ODK Central antérieur à 1.3)</span>'} ; un rechargement complet a lieu au moins toutes les ${set.fullRefreshHours} h.</p></header>
       <div class="cache-table-wrap"><table class="cache-table"><thead><tr><th>Formulaire</th><th>Table · filtre</th><th class="r">Lignes</th><th class="r">Taille</th><th>Données</th><th>Dernière opération</th><th class="r">Accès</th><th></th></tr></thead><tbody>
@@ -1816,7 +1825,7 @@ async function openCachePanel() {
       if (dataStatus?.results.some(r => r.key === key)) loadData(false, { silent: true });
     }));
     $('#cacheClear', dlg).onclick = async () => {
-      if (!confirm('Vider le cache de tous vos formulaires sur ce serveur ? Les prochains affichages rechargeront les données depuis ODK Central.')) return;
+      if (!confirm(`Vider le cache de tous vos formulaires sur ce serveur ? Les prochains affichages rechargeront les données depuis ${platformName()}.`)) return;
       try { const r = await api('/api/cache', { method: 'DELETE' }); toast(`${r.deleted} entrée(s) supprimée(s)`); } catch (e) { toast(e.message, true); }
       draw();
     };
@@ -1928,33 +1937,108 @@ function download(kind) {
   }
 }
 
-// ------------------------------------------------------------------ connexion ODK
+// ------------------------------------------------------------------ connexion (ODK Central, IASO, CommCare)
 let config = {};
 let currentUser = null;
+let loginPlatform = 'odk';
 const RECENT_KEY = 'odkvis.recent';
+// { servers, last } = ODK (historical format) ; platforms.<id> = { servers, last } ; platform = last choice
 const store = {
   get() { try { return JSON.parse(localStorage.getItem(RECENT_KEY)) || { servers: [], last: {} }; } catch { return { servers: [], last: {} }; } },
   set(v) { try { localStorage.setItem(RECENT_KEY, JSON.stringify(v)); } catch { /* private mode */ } },
+  of(platform) { const v = this.get(); return platform === 'odk' ? { servers: v.servers || [], last: v.last || {} } : (v.platforms && v.platforms[platform]) || { servers: [], last: {} }; },
+  remember(platform, server, email) {
+    const v = this.get();
+    const cur = this.of(platform);
+    const entry = { servers: [server, ...cur.servers.filter(s => s !== server)].slice(0, 8), last: { server, email } };
+    if (platform === 'odk') Object.assign(v, entry); else (v.platforms ||= {})[platform] = entry;
+    v.platform = platform;
+    this.set(v);
+  },
 };
+
+const PLATFORM_UI = {
+  odk: {
+    name: 'ODK Central', server: 'Serveur ODK Central', placeholder: 'https://central.monorg.org',
+    serverHelp: 'L\'adresse que vous utilisez pour ouvrir ODK Central dans le navigateur.',
+    user: 'E-mail', userType: 'email', pw: 'Mot de passe', remember: 'Mémoriser ce serveur et cet e-mail sur cet appareil',
+    sub: 'Connectez-vous avec votre compte <b>ODK Central</b>. Vous verrez uniquement les projets auxquels votre compte a accès.',
+    foot: 'Le mot de passe est transmis uniquement à votre serveur ODK Central et n\'est jamais enregistré.', from: 'Soumis du',
+  },
+  iaso: {
+    name: 'IASO', server: 'Serveur IASO', placeholder: 'https://iaso.bluesquare.org',
+    serverHelp: 'L\'adresse de votre tableau de bord IASO, par exemple https://iaso.bluesquare.org.',
+    user: 'Nom d\'utilisateur', userType: 'text', pw: 'Mot de passe', remember: 'Mémoriser ce serveur et cet identifiant sur cet appareil',
+    sub: 'Connectez-vous avec votre compte <b>IASO</b> (Bluesquare). Vous verrez uniquement les projets, formulaires et unités d\'organisation autorisés pour votre compte.',
+    foot: 'Le mot de passe est transmis uniquement à votre serveur IASO et n\'est jamais enregistré.', from: 'Créées du',
+  },
+  commcare: {
+    name: 'CommCare', server: 'Serveur CommCare HQ', placeholder: 'https://www.commcarehq.org',
+    serverHelp: 'www.commcarehq.org, eu.commcarehq.org, india.commcarehq.org ou votre propre serveur.',
+    user: 'E-mail (compte web CommCare HQ)', userType: 'email', pw: 'Clé API ou mot de passe', remember: 'Mémoriser ce serveur et cet e-mail sur cet appareil',
+    pwHelp: 'Conseillé : une clé API, à créer dans CommCare HQ → Paramètres du compte → Clés API. Obligatoire avec la double authentification ou le SSO.',
+    sub: 'Connectez-vous avec votre compte web <b>CommCare HQ</b>. Il lui faut les droits « Accès à l\'API » et « Modifier les données » du projet.',
+    foot: 'La clé API ou le mot de passe est transmis uniquement à CommCare HQ et n\'est gardé qu\'en mémoire, le temps de votre session.', from: 'Reçues du',
+  },
+};
+const platformName = () => (currentUser?.demo ? 'la démo' : currentUser?.platformLabel || PLATFORM_UI[currentUser?.platform || 'odk']?.name || 'la plateforme');
+const platformsConf = () => (config.platforms && config.platforms.length ? config.platforms : [{ id: 'odk', label: 'ODK Central', defaultServer: config.defaultServer || '', lockServer: !!config.lockServer, presets: [] }]);
+
+function setLoginPlatform(id, { keepValues = false } = {}) {
+  const list = platformsConf();
+  const conf = list.find(p => p.id === id) || list[0];
+  loginPlatform = conf.id;
+  const ui = PLATFORM_UI[conf.id] || PLATFORM_UI.odk;
+  const saved = store.of(conf.id);
+  $$('#platformTabs [data-platform]').forEach(b => { const on = b.dataset.platform === conf.id; b.classList.toggle('on', on); b.setAttribute('aria-checked', String(on)); });
+  $('#loginSub').innerHTML = ui.sub;
+  $('#serverLabel').textContent = ui.server;
+  $('#serverHelp').textContent = ui.serverHelp;
+  $('#loginServer').placeholder = ui.placeholder;
+  $('#userLabel').textContent = ui.user;
+  $('#loginEmail').type = ui.userType;
+  $('#pwLabel').textContent = ui.pw;
+  $('#pwHelp').hidden = !ui.pwHelp; $('#pwHelp').textContent = ui.pwHelp || '';
+  $('#rememberLabel').textContent = ui.remember;
+  $('#loginFoot').textContent = ui.foot;
+  const options = [...saved.servers, ...(conf.presets || []).map(p => p.url)].filter((x, i, a) => x && a.indexOf(x) === i);
+  $('#recentServers').innerHTML = options.map(s => `<option value="${esc(s)}">`).join('');
+  if (conf.lockServer) {
+    $('#serverWrap').hidden = true; $('#loginServer').required = false;
+    $('#serverLocked').hidden = false; $('#serverLocked').innerHTML = `${esc(ui.server)} : <b>${esc(conf.defaultServer)}</b>`;
+  } else {
+    $('#serverWrap').hidden = false; $('#loginServer').required = true; $('#serverLocked').hidden = true;
+    if (!keepValues || !$('#loginServer').value) $('#loginServer').value = saved.last.server || conf.defaultServer || (conf.presets && conf.presets[0]?.url) || '';
+  }
+  if (!keepValues || !$('#loginEmail').value) $('#loginEmail').value = saved.last.email || '';
+}
+
+function renderPlatformTabs() {
+  const list = platformsConf();
+  const tabs = $('#platformTabs');
+  tabs.hidden = list.length < 2;
+  tabs.innerHTML = list.map(p => `<button type="button" role="radio" aria-checked="false" data-platform="${esc(p.id)}"><span class="pf-dot pf-${esc(p.id)}"></span>${esc(PLATFORM_UI[p.id]?.name || p.label)}</button>`).join('');
+  $$('[data-platform]', tabs).forEach(b => (b.onclick = () => { $('#loginMsg').hidden = true; setLoginPlatform(b.dataset.platform); $('#loginPassword').value = ''; focusLogin(); }));
+}
+
+function focusLogin() {
+  const conf = platformsConf().find(p => p.id === loginPlatform) || {};
+  setTimeout(() => ($('#loginServer').value || conf.lockServer ? ($('#loginEmail').value ? $('#loginPassword') : $('#loginEmail')) : $('#loginServer')).focus({ preventScroll: true }), 0);
+}
 
 function showLogin(message = '', kind = 'error') {
   currentUser = null;
   $('#appRoot').hidden = true; $('#login').hidden = false; $('#popover').hidden = true;
   const msg = $('#loginMsg');
   msg.hidden = !message; msg.textContent = message; msg.className = 'login-msg' + (kind === 'info' ? ' info' : '');
-  const saved = store.get();
-  $('#recentServers').innerHTML = saved.servers.map(s => `<option value="${esc(s)}">`).join('');
-  if (config.lockServer) {
-    $('#serverWrap').hidden = true; $('#loginServer').required = false;
-    $('#serverLocked').hidden = false; $('#serverLocked').innerHTML = `Serveur : <b>${esc(config.defaultServer)}</b>`;
-  } else if (!$('#loginServer').value) {
-    $('#loginServer').value = saved.last.server || config.defaultServer || '';
-  }
-  if (!$('#loginEmail').value) $('#loginEmail').value = saved.last.email || '';
+  renderPlatformTabs();
+  const v = store.get();
+  const ids = platformsConf().map(p => p.id);
+  setLoginPlatform(ids.includes(loginPlatform) && loginPlatform !== 'odk' ? loginPlatform : ids.includes(v.platform) ? v.platform : ids[0], { keepValues: true });
   $('#demoBtn').hidden = !config.allowDemo;
   $('#loginPassword').value = '';
   // focus the first empty field without scrolling: on a phone the description above must stay visible
-  setTimeout(() => ($('#loginServer').value || config.lockServer ? ($('#loginEmail').value ? $('#loginPassword') : $('#loginEmail')) : $('#loginServer')).focus({ preventScroll: true }), 0);
+  focusLogin();
   $('#login').scrollTop = 0;
 }
 
@@ -1964,12 +2048,7 @@ async function doLogin(payload) {
   $('#loginMsg').hidden = true;
   try {
     const me = await api('/api/login', { method: 'POST', body: JSON.stringify(payload) });
-    if (!me.demo && $('#rememberServer').checked) {
-      const saved = store.get();
-      saved.servers = [me.server, ...saved.servers.filter(s => s !== me.server)].slice(0, 8);
-      saved.last = { server: me.server, email: me.email };
-      store.set(saved);
-    }
+    if (!me.demo && $('#rememberServer').checked) store.remember(me.platform || 'odk', me.server, me.email);
     await startApp(me, true);
   } catch (e) {
     $('#loginMsg').hidden = false; $('#loginMsg').className = 'login-msg'; $('#loginMsg').textContent = e.message;
@@ -1978,22 +2057,37 @@ async function doLogin(payload) {
   }
 }
 
+// adapts the source panel to the platform (review state exists only in ODK Central)
+function applyPlatform(me) {
+  const reviewState = !me.features || me.features.reviewState !== false;
+  $('#reviewWrap').hidden = !reviewState;
+  if (!reviewState) { state.reviewState = ''; $('#reviewState').value = ''; }
+  $('#fromLabel').textContent = (PLATFORM_UI[me.platform] || PLATFORM_UI.odk).from;
+}
+
 async function startApp(me, fresh) {
-  const serverChanged = currentUser?.server !== me.server;
+  const serverChanged = currentUser?.server !== me.server || (currentUser?.platform || 'odk') !== (me.platform || 'odk');
   currentUser = me;
   $('#login').hidden = true; $('#appRoot').hidden = false;
   $('#demoBadge').hidden = !me.demo;
   const initials = (me.name || me.email).split(/[\s@.]+/).filter(Boolean).slice(0, 2).map(w => w[0].toUpperCase()).join('');
   $('#userAvatar').textContent = initials || '?';
   $('#userName').textContent = me.demo ? 'Démo' : me.name;
-  $('#userFull').textContent = me.demo ? 'Mode démonstration' : `${me.name} (${me.email})`;
-  $('#userServer').textContent = me.demo ? 'Données fictives' : me.server;
-  if (fresh || serverChanged) { state = blankState(); data = []; allFields = []; fields = []; tables = []; labels = null; transforms = []; compiled = new Map(); displayFormats = new Map(); fieldMap = new Map(); dataStatus = null; }
+  $('#userFull').textContent = me.demo ? 'Mode démonstration' : me.name === me.email ? me.name : `${me.name} (${me.email})`;
+  $('#userServer').textContent = me.demo ? 'Données fictives' : `${me.platformLabel || 'ODK Central'} · ${me.server}`;
+  if (fresh || serverChanged) {
+    state = blankState(); data = []; allFields = []; fields = []; tables = []; labels = null; transforms = []; compiled = new Map(); displayFormats = new Map(); fieldMap = new Map(); dataStatus = null;
+    // nothing from the previous account stays on screen while the new one loads
+    for (const id of ['#project', '#form', '#table']) $(id).innerHTML = '';
+    $('#rowCount').textContent = 'Chargement…'; $('#cacheState').textContent = ''; $('#cacheState').className = 'cache-state';
+    renderLangOptions(); renderFieldList();
+  }
+  applyPlatform(me);
   render();
   const id = location.hash.match(/^#\/([\w-]+)/);
   try {
     if (id) await openVis(id[1]); else await loadProjects();
-  } catch (e) { if (e.status !== 401) toast(e.message, true); }
+  } catch (e) { if (e.status !== 401) { toast(e.message, true); $('#rowCount').textContent = 'Échec du chargement'; } }
 }
 
 async function logout() {
@@ -2004,7 +2098,7 @@ async function logout() {
 function bindLogin() {
   $('#loginForm').addEventListener('submit', e => {
     e.preventDefault();
-    doLogin({ server: $('#loginServer').value, email: $('#loginEmail').value, password: $('#loginPassword').value });
+    doLogin({ platform: loginPlatform, server: $('#loginServer').value, email: $('#loginEmail').value, password: $('#loginPassword').value });
   });
   $('#demoBtn').onclick = () => doLogin({ demo: true });
   $('#togglePw').onclick = () => {
@@ -2020,6 +2114,8 @@ function bindLogin() {
     $('#loginServer').value = ''; $('#loginEmail').value = '';
     history.replaceState(null, '', location.pathname);
     showLogin();
+    $('#loginServer').value = ''; $('#loginEmail').value = '';
+    focusLogin();
   };
 }
 

@@ -1,0 +1,72 @@
+{
+ "name": "data",
+ "type": "survey",
+ "default_language": "default",
+ "id_string": "supervision",
+ "sms_keyword": "supervision",
+ "title": "Supervision FOSA",
+ "version": "3",
+ "children": [
+  {
+   "name": "jour",
+   "label": "Jour de la supervision",
+   "type": "date"
+  },
+  {
+   "name": "eau",
+   "label": "Point d'eau fonctionnel ?",
+   "type": "select one",
+   "itemset": "ouinon",
+   "list_name": "ouinon",
+   "children": [
+    {
+     "name": "oui",
+     "label": "Oui"
+    },
+    {
+     "name": "non",
+     "label": "Non"
+    }
+   ]
+  },
+  {
+   "name": "lits",
+   "label": "Nombre de lits",
+   "type": "integer"
+  },
+  {
+   "name": "remarques",
+   "label": "Remarques",
+   "type": "text"
+  },
+  {
+   "name": "meta",
+   "control": {
+    "bodyless": true
+   },
+   "type": "group",
+   "children": [
+    {
+     "name": "instanceID",
+     "type": "calculate",
+     "bind": {
+      "readonly": "true()",
+      "jr:preload": "uid"
+     }
+    }
+   ]
+  }
+ ],
+ "choices": {
+  "ouinon": [
+   {
+    "name": "oui",
+    "label": "Oui"
+   },
+   {
+    "name": "non",
+    "label": "Non"
+   }
+  ]
+ }
+}

@@ -182,6 +182,64 @@ function extractLabels(xml) {
   return out;
 }
 
+// ---------------------------------------------------------------- XForm → field list
+// Same shape as ODK Central's /fields?odata=true: [{ path, name, type, selectMultiple, repeat }]
+// (groups have type 'structure', repeats type 'repeat'). Used for platforms that serve the XForm
+// but not a field list (IASO).
+const BIND_TYPES = { integer: 'int', int: 'int', long: 'int', short: 'int', decimal: 'decimal', double: 'decimal', float: 'decimal',
+  string: 'string', select1: 'string', select: 'string', rank: 'string', date: 'date', datetime: 'dateTime', time: 'time',
+  geopoint: 'geopoint', geotrace: 'geotrace', geoshape: 'geoshape', binary: 'binary', barcode: 'barcode', boolean: 'boolean', intent: 'string' };
+
+function extractFields(xml) {
+  const doc = parseXML(String(xml || ''));
+  const model = find(doc, 'model');
+  if (!model) return [];
+  const instances = elements(model).filter(c => c.local === 'instance');
+  const primary = instances.find(x => !x.attrs.id) || instances[0];
+  const rootEl = primary && elements(primary)[0];
+  if (!rootEl) return [];
+  const strip = ref => {
+    const segs = String(ref || '').trim().replace(/^\/+/, '').split('/');
+    if (segs[0] && segs[0].split(':').pop() === rootEl.local) segs.shift();
+    return segs.join('/');
+  };
+  const types = {};
+  for (const b of findAll(model, 'bind')) {
+    const p = strip(b.attrs.nodeset || b.attrs.ref);
+    const t = String(b.attrs.type || '').split(':').pop().toLowerCase();
+    if (p && t) types[p] = t;
+  }
+  const repeats = new Set(), multi = new Set();
+  const body = find(doc, 'body');
+  const walk = (node, base) => {
+    for (const c of elements(node)) {
+      const ref = c.attrs.nodeset || c.attrs.ref;
+      const path = ref ? (String(ref).startsWith('/') ? strip(ref) : base ? `${base}/${ref}` : ref) : base;
+      if (c.local === 'repeat' && path) repeats.add(path);
+      if (c.local === 'select' && path) multi.add(path);
+      walk(c, CONTROLS.has(c.local) ? path : base);
+    }
+  };
+  if (body) walk(body, '');
+  for (const [p, t] of Object.entries(types)) if (t === 'select') multi.add(p);
+
+  const out = [], seen = new Set();
+  const visit = (node, base) => {
+    for (const c of elements(node)) {
+      const path = base ? `${base}/${c.local}` : c.local;
+      if (seen.has(path)) continue; // template + instances of a repeat
+      seen.add(path);
+      const kids = elements(c);
+      const isRepeat = repeats.has(path) || /template/.test(Object.keys(c.attrs).join(' '));
+      if (isRepeat) { out.push({ path, name: c.local, type: 'repeat', selectMultiple: false, repeat: true }); visit(c, path); }
+      else if (kids.length) { out.push({ path, name: c.local, type: 'structure', selectMultiple: false, repeat: false }); visit(c, path); }
+      else out.push({ path, name: c.local, type: BIND_TYPES[types[path]] || 'string', selectMultiple: multi.has(path), repeat: false });
+    }
+  };
+  visit(rootEl, '');
+  return out;
+}
+
 // ---------------------------------------------------------------- CSV attachments (select_one_from_file, entity lists)
 function parseCSV(text) {
   const rows = []; let row = [], cell = '', q = false;
@@ -222,4 +280,4 @@ function csvChoices(csv, valueRef = 'name', labelRef = 'label') {
   return map;
 }
 
-module.exports = { parseXML, extractLabels, csvChoices, parseCSV };
+module.exports = { parseXML, extractLabels, extractFields, csvChoices, parseCSV };

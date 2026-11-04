@@ -14,6 +14,7 @@ ENV NODE_ENV=production PORT=3000
 WORKDIR /app
 
 COPY --chown=node:node package.json server.js demo-data.js xform.js cache.js ./
+COPY --chown=node:node connectors ./connectors
 COPY --chown=node:node public ./public
 COPY --from=vendor --chown=node:node /build/out ./public/vendor
 RUN mkdir -p /app/data && chown node:node /app/data

@@ -1,0 +1,54 @@
+<?xml version="1.0"?>
+<h:html xmlns="http://www.w3.org/2002/xforms" xmlns:h="http://www.w3.org/1999/xhtml" xmlns:ev="http://www.w3.org/2001/xml-events" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:jr="http://openrosa.org/javarosa" xmlns:orx="http://openrosa.org/xforms" xmlns:odk="http://www.opendatakit.org/xforms">
+  <h:head>
+    <h:title>Supervision FOSA</h:title>
+    <model odk:xforms-version="1.0.0">
+      <instance>
+        <data id="supervision" version="3">
+          <jour/>
+          <eau/>
+          <lits/>
+          <remarques/>
+          <meta>
+            <instanceID/>
+          </meta>
+        </data>
+      </instance>
+      <instance id="ouinon">
+        <root>
+          <item>
+            <name>oui</name>
+            <label>Oui</label>
+          </item>
+          <item>
+            <name>non</name>
+            <label>Non</label>
+          </item>
+        </root>
+      </instance>
+      <bind nodeset="/data/jour" type="date"/>
+      <bind nodeset="/data/eau" type="string"/>
+      <bind nodeset="/data/lits" type="int"/>
+      <bind nodeset="/data/remarques" type="string"/>
+      <bind nodeset="/data/meta/instanceID" type="string" readonly="true()" jr:preload="uid"/>
+    </model>
+  </h:head>
+  <h:body>
+    <input ref="/data/jour">
+      <label>Jour de la supervision</label>
+    </input>
+    <select1 ref="/data/eau">
+      <label>Point d'eau fonctionnel ?</label>
+      <itemset nodeset="instance('ouinon')/root/item">
+        <value ref="name"/>
+        <label ref="label"/>
+      </itemset>
+    </select1>
+    <input ref="/data/lits">
+      <label>Nombre de lits</label>
+    </input>
+    <input ref="/data/remarques">
+      <label>Remarques</label>
+    </input>
+  </h:body>
+</h:html>

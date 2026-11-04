@@ -1,36 +1,53 @@
 # ODK Visualizer
 
-Application de visualisation de données pour **ODK Central**, sur le modèle du *Data Visualizer* de DHIS2. Elle lit les formulaires via le **flux OData** de Central. On construit des graphiques, tableaux croisés et cartes GPS en glissant des champs dans **Colonnes / Lignes / Filtre**, sans export Excel.
+Application de visualisation de données pour **ODK Central**, **IASO** (Bluesquare) et **CommCare HQ** (Dimagi), sur le modèle du *Data Visualizer* de DHIS2. Elle lit les soumissions des formulaires directement par l'API de chaque plateforme (flux OData pour Central). On construit des graphiques, tableaux croisés et cartes GPS en glissant des champs dans **Colonnes / Lignes / Filtre**, sans export Excel.
 
 | DHIS2 Data Visualizer | ODK Visualizer |
 |---|---|
 | Éléments de données / indicateurs | Champs du formulaire |
-| Unités d'organisation | N'importe quel champ de choix (région, district, formation sanitaire…) |
+| Unités d'organisation | N'importe quel champ de choix (région, district, formation sanitaire…) ; avec IASO, la vraie hiérarchie d'unités d'organisation |
 | Périodes | N'importe quel champ date, par jour / semaine / mois / trimestre / année |
 | Valeurs | Nombre, % du total, ou Somme / Moyenne / Min / Max d'un champ numérique |
 | Favoris | Visualisations enregistrées (lien partageable `#/<id>`) |
 
 En plus des graphiques du *Data Visualizer* de DHIS2, l'application propose 13 types de visualisation inspirés de la galerie d'**Apache Superset** (marqués ✦ dans la liste).
 
-## Connexion ODK dans l'application
+## Plateformes prises en charge
 
-Il n'y a **aucun identifiant ODK dans un fichier de configuration**. Au démarrage, l'application affiche un écran de connexion :
+| | ODK Central | IASO (Bluesquare) | CommCare HQ (Dimagi) |
+|---|---|---|---|
+| Connexion | e-mail + mot de passe du compte web | nom d'utilisateur + mot de passe | e-mail + **clé API** (ou mot de passe) |
+| « Projets » | projets Central | projets IASO | espaces de projet |
+| « Formulaires » | formulaires publiés | formulaires du projet | *Application › Module › Formulaire* |
+| Libellés et langues | XForm publié + CSV joints | XForm de la dernière version (repli : descripteur pyxform, puis `possible_fields`) | structure de l'application (questions, options, traductions) |
+| Répétitions | tables OData, tous niveaux | répétitions de premier niveau (IASO aplatit les suivantes) | tous niveaux (une répétition à une seule entrée est remise en liste) |
+| Métadonnées | date de soumission, enquêteur, état de revue, appareil, version | date de création / modification / réception, créé par, période, statut, statut de validation, version, GPS | date de réception, début / fin de saisie, utilisateur mobile, appareil, version, GPS |
+| En plus | filtre « État de revue » | **unité d'organisation, type et un champ par niveau de la pyramide** (pays › région › district…), position de l'unité | — |
+| Filtre de dates | date de soumission | date de création (appareil, sinon serveur) | date de réception |
+| Mise à jour incrémentale | `__system/updatedAt` (Central ≥ 1.3) | `modificationDateFrom` | `server_modified_on_start` |
+| Cache | partagé entre utilisateurs du serveur (droits vérifiés) | **propre à chaque compte** (IASO filtre par unité d'organisation) | **propre à chaque compte** |
 
-1. **Serveur ODK Central** : l'adresse habituelle de Central, par ex. `https://central.monorg.org`. On peut coller l'URL complète du navigateur, elle est nettoyée automatiquement.
-2. **E-mail** et **mot de passe** du compte ODK Central de l'utilisateur.
+Les enregistrements d'IASO et de CommCare sont convertis par le serveur dans la forme des lignes OData de Central (`__id`, `__system/…`, groupes imbriqués, tables `Submissions.<répétition>` reliées par `__Submissions-id`, points GPS en GeoJSON). Le reste de l'application (graphiques, libellés, formateur, cache, partage) fonctionne donc à l'identique pour les trois plateformes.
+
+## Connexion dans l'application
+
+Il n'y a **aucun identifiant dans un fichier de configuration**. Au démarrage, l'application affiche un écran de connexion où l'utilisateur choisit sa plateforme puis saisit :
+
+1. **Le serveur** : l'adresse habituelle, par ex. `https://central.monorg.org`, `https://iaso.bluesquare.org` ou `https://www.commcarehq.org` (les serveurs publics d'IASO et CommCare sont proposés). On peut coller l'URL complète du navigateur, elle est nettoyée automatiquement.
+2. **Son identifiant** et **son mot de passe** (pour CommCare, de préférence une **clé API**, obligatoire avec la double authentification ou le SSO).
 
 Ensuite :
 
-- Chaque utilisateur ne voit **que les projets et formulaires autorisés pour son propre compte ODK**. Les rôles et droits de Central s'appliquent tels quels.
-- Le mot de passe est transmis **une seule fois** à Central et n'est jamais enregistré. Le serveur garde seulement le jeton de session renvoyé par Central, en mémoire, lié à un cookie `HttpOnly`.
-- La session dure aussi longtemps que celle de Central (24 h par défaut). À l'expiration, l'écran de connexion réapparaît.
-- **Se déconnecter** ferme aussi la session côté ODK Central. **Changer de serveur / compte** permet de passer d'un serveur Central à un autre.
-- Le dernier serveur et le dernier e-mail utilisés sont proposés au retour, avec une liste des serveurs récents. Ils sont mémorisés sur l'appareil, jamais le mot de passe.
+- Chaque utilisateur ne voit **que les projets, formulaires et soumissions autorisés pour son propre compte**. Les rôles et droits de la plateforme s'appliquent tels quels.
+- Le mot de passe n'est **jamais enregistré** (ni sur le disque ni dans le navigateur). Pour ODK Central et IASO, il est transmis **une seule fois** : le serveur garde ensuite le jeton de session renvoyé par la plateforme (jeton JWT pour IASO). CommCare n'a pas de jeton de session : la clé API (ou le mot de passe) reste en mémoire sur le serveur pendant la session, car elle accompagne chaque appel. Dans tous les cas, la session est liée à un cookie `HttpOnly`.
+- La session dure aussi longtemps que celle de Central (24 h par défaut), 12 h pour IASO et CommCare (`SESSION_HOURS`). À l'expiration, l'écran de connexion réapparaît.
+- **Se déconnecter** ferme aussi la session côté ODK Central. **Changer de serveur / compte** permet de passer d'un serveur ou d'une plateforme à l'autre.
+- Le dernier serveur et le dernier identifiant utilisés sont proposés au retour, pour chaque plateforme, avec une liste des serveurs récents. Ils sont mémorisés sur l'appareil, jamais le mot de passe.
 - Un bouton **Essayer avec des données de démonstration** permet de tester sans serveur.
 
-Les visualisations enregistrées sont rattachées au serveur ODK :
+Les visualisations enregistrées et les champs transformés sont rattachés au serveur :
 
-- Elles sont visibles par les utilisateurs du même serveur qui ont accès au projet concerné.
+- Ils sont visibles par les utilisateurs du même serveur qui ont accès au projet concerné.
 - Seul leur auteur peut les modifier ou les supprimer. Les autres utilisateurs peuvent en faire une copie avec « Enregistrer sous ».
 
 ## Fonctionnalités
@@ -74,12 +91,12 @@ Ils sont classés par catégorie, comme dans la galerie d'Apache Superset ; ✦ 
 Télécharger toutes les soumissions d'un gros formulaire par OData peut prendre du temps. Le serveur garde donc chaque téléchargement en cache (une table × un filtre de période ou d'état de revue) :
 
 - **Deux niveaux** : en mémoire (les plus utilisés) et sur le disque, en fichiers gzip (environ 10 à 20 fois plus petits). Le cache **survit aux redémarrages**. Les fichiers sont lisibles par le serveur seulement (droits 600).
-- **Partagé entre utilisateurs** du même serveur ODK : si 20 personnes ouvrent le même formulaire, Central n'est sollicité qu'une fois. Avant de servir un cache, le serveur vérifie toujours que le compte ODK de l'utilisateur a accès au formulaire, avec une vérification toutes les 2 minutes.
+- **Partagé entre utilisateurs** du même serveur ODK : si 20 personnes ouvrent le même formulaire, Central n'est sollicité qu'une fois. Avant de servir un cache, le serveur vérifie toujours que le compte de l'utilisateur a accès au formulaire, avec une vérification toutes les 2 minutes. Pour IASO et CommCare, qui limitent les soumissions visibles selon l'utilisateur (unités d'organisation, lieux), le cache est **propre à chaque compte**.
 - **Affichage immédiat** : les données de moins de `CACHE_MINUTES` sont servies directement. Plus anciennes, elles s'affichent tout de suite et se mettent à jour en arrière-plan ; le graphique se rafraîchit tout seul quand la mise à jour arrive.
 - **Mise à jour incrémentale** :
   1. Une vérification légère est d'abord faite : quelques requêtes de comptage, sans télécharger de données. Si rien n'a changé, aucune donnée n'est téléchargée.
-  2. Sinon, seules les soumissions **nouvelles ou modifiées** sont récupérées (`__system/submissionDate` / `__system/updatedAt`, ODK Central 1.3 et plus).
-  3. Les suppressions et les changements d'état de revue sont détectés, et déclenchent alors un rechargement complet.
+  2. Sinon, seules les soumissions **nouvelles ou modifiées** sont récupérées (ODK Central 1.3 et plus : `__system/submissionDate` / `__system/updatedAt` ; IASO : `modificationDateFrom` ; CommCare : `server_modified_on_start`). Pour IASO et CommCare, les **répétitions** sont elles aussi mises à jour de façon incrémentale : les lignes des soumissions modifiées sont remplacées.
+  3. Les suppressions, archivages et changements d'état de revue sont détectés, et déclenchent alors un rechargement complet.
   4. Un rechargement complet a lieu au moins toutes les `CACHE_FULL_REFRESH_HOURS` heures.
 - **Une seule requête à la fois** par donnée : des demandes simultanées attendent le même téléchargement.
 - **Réponses compressées** (gzip) et **ETag** : un navigateur qui a déjà les données reçoit une réponse « 304 » vide.
@@ -124,7 +141,7 @@ Cliquez sur un champ, puis sur **« ƒ Formater / transformer… »**, ou sur **
 - N'importe quel champ peut être limité à certaines valeurs ; un champ à choix multiples compte chaque option cochée séparément.
 - Tri par libellé ou par valeur, Top N, masquer « (vide) », afficher les valeurs.
 - Export PNG, tableau agrégé en CSV (avec les libellés), données brutes en CSV (codes, plus une ligne de libellés de questions).
-- Connexion avec son propre compte ODK Central, visualisations enregistrées et partagées par serveur.
+- Connexion avec son propre compte ODK Central, IASO ou CommCare, visualisations enregistrées et partagées par serveur.
 
 ## Lancer
 
@@ -132,6 +149,7 @@ Cliquez sur un champ, puis sur **« ƒ Formater / transformer… »**, ou sur **
 docker compose up -d --build     # voir DOCKER.md
 # ou sans Docker :
 node server.js
+npm test                         # tests (connecteurs IASO et CommCare contre des simulateurs)
 ```
 
 Ouvrir `http://localhost:3000`. Le fichier `.env` est **facultatif** ; il sert seulement à des réglages comme le serveur par défaut. Voir `.env.example`.
@@ -140,9 +158,12 @@ Ouvrir `http://localhost:3000`. Le fichier `.env` est **facultatif** ; il sert s
 
 | Variable | Effet |
 |---|---|
-| `ODK_DEFAULT_URL` | Serveur proposé par défaut sur l'écran de connexion |
-| `ODK_LOCK_URL=true` | Impose ce serveur : les utilisateurs saisissent seulement e-mail et mot de passe |
-| `ALLOWED_SERVERS` | Liste blanche de serveurs Central autorisés, séparés par des virgules |
+| `PLATFORMS` | Plateformes proposées, dans l'ordre : `odk,iaso,commcare` (défaut). Ex. `iaso` seul |
+| `ODK_DEFAULT_URL`, `IASO_DEFAULT_URL`, `COMMCARE_DEFAULT_URL` | Serveur proposé par défaut pour chaque plateforme |
+| `ODK_LOCK_URL=true` (idem `IASO_LOCK_URL`, `COMMCARE_LOCK_URL`) | Impose ce serveur : les utilisateurs saisissent seulement identifiant et mot de passe |
+| `ALLOWED_SERVERS` | Liste blanche de serveurs autorisés (toutes plateformes), séparés par des virgules |
+| `SESSION_HOURS` | Durée maximale d'une session IASO ou CommCare (12 h) |
+| `IASO_PAGE_SIZE`, `COMMCARE_PAGE_SIZE` | Taille des pages demandées (500 / 1000) |
 | `ALLOW_DEMO=false` | Masque le mode démonstration |
 | `CACHE_MINUTES` | Fraîcheur du cache : au-delà, mise à jour en arrière-plan (5 min par défaut) |
 | `CACHE_MAX_STALE_HOURS` | Au-delà, la mise à jour est attendue avant d'afficher (24 h) |
@@ -153,7 +174,9 @@ Ouvrir `http://localhost:3000`. Le fichier `.env` est **facultatif** ; il sert s
 
 ## Fonctionnement technique
 
-Le navigateur ne parle jamais directement à Central. `server.js` relaie les appels avec le jeton de l'utilisateur connecté :
+Le navigateur ne parle jamais directement à la plateforme. `server.js` relaie les appels avec le jeton de l'utilisateur connecté, par l'intermédiaire d'un **connecteur** par plateforme (`connectors/odk.js`, `iaso.js`, `commcare.js`), qui fournit toujours les mêmes opérations : connexion, projets, formulaires, tables, champs, libellés, lignes, comptages et mises à jour incrémentales, contrôle d'accès.
+
+### ODK Central
 
 | Application | Appel ODK Central |
 |---|---|
@@ -167,19 +190,53 @@ Le navigateur ne parle jamais directement à Central. `server.js` relaie les app
 | `…/data` | `GET …/:f.svc/<table>?$top=1000&$skip=…&$count=true&$filter=…` (toutes les pages ; `$root/Submissions/…` pour les répétitions), puis mises à jour par `$filter=__system/updatedAt gt …` et vérifications `$top=1&$count=true` |
 | contrôle d'accès | `GET /v1/projects/:p/forms/:f` avec le jeton de l'utilisateur avant de servir un cache |
 
+### IASO
+
+Appels vérifiés dans le code source d'IASO ([BLSQ/iaso](https://github.com/BLSQ/iaso)).
+
+| Application | Appel IASO |
+|---|---|
+| `POST /api/login` | `POST /api/token/` (`username`, `password` → jeton JWT), puis `GET /api/profiles/me/` |
+| `/api/projects` | `GET /api/projects/` |
+| `/api/projects/:p/forms` | `GET /api/forms/?projectsIds=:p` |
+| `…/fields`, `…/labels`, `…/tables` | `GET /api/forms/:f/` puis le XForm de `latest_form_version.file` (le jeton n'est jamais envoyé à un autre hôte, par ex. S3) ; repli `GET /api/formversions/:v/?fields=descriptor`, puis `possible_fields` |
+| hiérarchie | `GET /api/v2/orgunittypes/?project=:p` (niveaux par profondeur) et `GET /api/orgunits/?smallSearch=true&searches=[{"search":"ids:…"}]` (parents) |
+| `…/data` | `GET /api/instances/?form_ids=:f&order=id&limit=500&page=…` (+ `dateFrom` / `dateTo`), puis `modificationDateFrom` ; vérifications `limit=1` (total) et `order=-updated_at&limit=100` |
+| contrôle d'accès | `GET /api/instances/?form_ids=:f&limit=1` avec le jeton de l'utilisateur |
+
+`file_content` d'IASO est « à plat » (clés = noms des questions, groupes supprimés) : le connecteur reconstruit les chemins complets grâce au XForm.
+
+### CommCare HQ
+
+Appels vérifiés dans le code source de CommCare HQ ([dimagi/commcare-hq](https://github.com/dimagi/commcare-hq), `corehq/apps/api`).
+
+| Application | Appel CommCare |
+|---|---|
+| `POST /api/login` | `GET /api/v0.5/identity/` avec `Authorization: ApiKey <e-mail>:<clé>`, sinon `Basic` |
+| `/api/projects` | `GET /api/v0.5/user_domains/` |
+| `/api/projects/:domaine/forms`, `…/fields`, `…/labels` | `GET /a/:domaine/api/v0.5/application/` (modules, formulaires, questions, options, traductions) |
+| `…/data` | `GET /a/:domaine/api/v0.5/form/?xmlns=…&app_id=…&limit=1000&order_by=indexed_on&indexed_on_start=…` (pagination par curseur : pas de limite des 10 000 résultats d'Elasticsearch), + `received_on_start` / `_end` ; mises à jour par `server_modified_on_start` |
+| limitation de débit | réponses 429 : attente (`Retry-After`) puis nouvel essai |
+
+### Simulateurs et tests
+
+`test/sim-iaso.js` et `test/sim-commcare.js` imitent les API d'IASO et de CommCare (formats de réponse, pagination, filtres, droits, restrictions par unité d'organisation, limitation de débit), d'après leur code source. `npm test` lance les deux simulateurs et le serveur, et vérifie les connecteurs de bout en bout. Les simulateurs servent aussi à essayer l'application sans compte (`npm run sim:iaso`, puis se connecter à `http://localhost:4610` avec `admin` / `admin123`).
+
 L'agrégation se fait dans le navigateur ; c'est rapide jusqu'à environ 100 000 lignes par table.
 
 ## Sécurité
 
 - Servez l'application en **HTTPS** : le mot de passe transite du navigateur vers l'application. Voir DOCKER.md, section HTTPS.
-- Le serveur se connecte à l'adresse saisie par l'utilisateur. Sur une installation publique, utilisez `ODK_LOCK_URL` ou `ALLOWED_SERVERS` pour limiter les serveurs joignables.
+- Le serveur se connecte à l'adresse saisie par l'utilisateur. Sur une installation publique, utilisez `ODK_LOCK_URL` / `IASO_LOCK_URL` / `COMMCARE_LOCK_URL`, `PLATFORMS` ou `ALLOWED_SERVERS` pour limiter les serveurs joignables.
+- La clé API (ou le mot de passe) CommCare reste en mémoire sur le serveur pendant la session, car elle sert à chaque appel ; elle n'est jamais écrite sur le disque ni renvoyée au navigateur. Préférez une clé API : elle se révoque sans changer de mot de passe.
 - La connexion est bloquée après 10 échecs en 10 minutes depuis la même adresse IP.
 - Le cache sur disque contient des données de soumissions : il est dans le volume `data` (droits 600). Mettez `CACHE_PERSIST=false` si rien ne doit être écrit sur le disque.
 - Les requêtes qui modifient des données doivent être en JSON, ce qui protège contre le CSRF.
 
 ## Pistes d'évolution
 
-- **Connecteurs IASO, DHIS2, CommCare, mSupply** : voir [ROADMAP-CONNECTEURS.md](ROADMAP-CONNECTEURS.md) (ordre conseillé, API, prérequis).
+- **Connecteurs DHIS2 et mSupply** (IASO et CommCare sont faits) : voir [ROADMAP-CONNECTEURS.md](ROADMAP-CONNECTEURS.md).
+- CommCare : ajouter les **cas** (Case API) comme source de données, en plus des formulaires.
 
 - Ajouter les listes d'entités (*Entities*) comme source de données.
 - Ajouter des tableaux de bord réunissant plusieurs visualisations, comme l'app Dashboard de DHIS2.
@@ -188,12 +245,15 @@ L'agrégation se fait dans le navigateur ; c'est rapide jusqu'à environ 100 000
 ## Fichiers
 
 ```
-server.js        connexion ODK par utilisateur, proxy OData, cache, visualisations, fichiers statiques
-xform.js         lecture des libellés du XForm (questions, choix, langues) et des CSV joints
+server.js        sessions, routes, cache, visualisations, fichiers statiques
+connectors/      un connecteur par plateforme : odk.js, iaso.js, commcare.js (+ records.js : conversion
+                 des enregistrements au format des lignes OData ; common.js : outils communs)
+xform.js         lecture du XForm : champs, libellés (questions, choix, langues) et CSV joints
+test/            tests (npm test), simulateurs IASO et CommCare, formulaires d'exemple
 cache.js         cache des données : mémoire LRU + fichiers gzip, une requête à la fois par donnée
 public/transforms.js  moteur du formateur (conversions, classes, regroupements, dates, formules)
 public/aide.html  guide d'utilisation (+ captures dans public/aide/)
-ROADMAP-CONNECTEURS.md  plan des connecteurs IASO, DHIS2, CommCare, mSupply
+ROADMAP-CONNECTEURS.md  connecteurs : état (IASO, CommCare faits) et plan (DHIS2, mSupply)
 demo-data.js     données de démonstration
 public/          index.html, app.js (connexion, mise en page, agrégation, graphiques), styles.css
 .env.example     réglages facultatifs

@@ -1,0 +1,352 @@
+{
+ "name": "data",
+ "type": "survey",
+ "default_language": "Français (fr)",
+ "id_string": "enquete_menage",
+ "sms_keyword": "enquete_menage",
+ "title": "Enquête ménage",
+ "version": "2026010101",
+ "children": [
+  {
+   "name": "debut",
+   "type": "start"
+  },
+  {
+   "name": "fin",
+   "type": "end"
+  },
+  {
+   "name": "date_visite",
+   "label": {
+    "Français (fr)": "Date de la visite",
+    "English (en)": "Visit date"
+   },
+   "type": "date"
+  },
+  {
+   "name": "menage",
+   "label": {
+    "Français (fr)": "Ménage",
+    "English (en)": "Household"
+   },
+   "control": {
+    "appearance": "field-list"
+   },
+   "type": "group",
+   "children": [
+    {
+     "name": "chef",
+     "label": {
+      "Français (fr)": "Nom du chef de ménage",
+      "English (en)": "Head of household"
+     },
+     "type": "text"
+    },
+    {
+     "name": "taille",
+     "label": {
+      "Français (fr)": "Taille du ménage",
+      "English (en)": "Household size"
+     },
+     "type": "integer"
+    },
+    {
+     "name": "milieu",
+     "label": {
+      "Français (fr)": "Milieu",
+      "English (en)": "Setting"
+     },
+     "type": "select one",
+     "itemset": "milieu",
+     "list_name": "milieu",
+     "children": [
+      {
+       "name": "urbain",
+       "label": {
+        "Français (fr)": "Urbain",
+        "English (en)": "Urban"
+       }
+      },
+      {
+       "name": "rural",
+       "label": {
+        "Français (fr)": "Rural",
+        "English (en)": "Rural"
+       }
+      }
+     ]
+    },
+    {
+     "name": "biens",
+     "label": {
+      "Français (fr)": "Biens possédés",
+      "English (en)": "Assets"
+     },
+     "type": "select all that apply",
+     "itemset": "biens",
+     "list_name": "biens",
+     "children": [
+      {
+       "name": "radio",
+       "label": {
+        "Français (fr)": "Radio",
+        "English (en)": "Radio"
+       }
+      },
+      {
+       "name": "tele",
+       "label": {
+        "Français (fr)": "Télévision",
+        "English (en)": "TV"
+       }
+      },
+      {
+       "name": "moto",
+       "label": {
+        "Français (fr)": "Moto",
+        "English (en)": "Motorbike"
+       }
+      },
+      {
+       "name": "velo",
+       "label": {
+        "Français (fr)": "Vélo",
+        "English (en)": "Bicycle"
+       }
+      }
+     ]
+    },
+    {
+     "name": "revenu",
+     "label": {
+      "Français (fr)": "Revenu mensuel",
+      "English (en)": "Monthly income"
+     },
+     "type": "decimal"
+    },
+    {
+     "name": "gps",
+     "label": {
+      "Français (fr)": "Position du ménage",
+      "English (en)": "Household location"
+     },
+     "type": "geopoint"
+    }
+   ]
+  },
+  {
+   "name": "membres",
+   "label": {
+    "Français (fr)": "Membres du ménage",
+    "English (en)": "Household members"
+   },
+   "type": "repeat",
+   "children": [
+    {
+     "name": "prenom",
+     "label": {
+      "Français (fr)": "Prénom",
+      "English (en)": "First name"
+     },
+     "type": "text"
+    },
+    {
+     "name": "age",
+     "label": {
+      "Français (fr)": "Âge (années)",
+      "English (en)": "Age (years)"
+     },
+     "type": "integer"
+    },
+    {
+     "name": "sexe",
+     "label": {
+      "Français (fr)": "Sexe",
+      "English (en)": "Sex"
+     },
+     "type": "select one",
+     "itemset": "sexe",
+     "list_name": "sexe",
+     "children": [
+      {
+       "name": "f",
+       "label": {
+        "Français (fr)": "Féminin",
+        "English (en)": "Female"
+       }
+      },
+      {
+       "name": "m",
+       "label": {
+        "Français (fr)": "Masculin",
+        "English (en)": "Male"
+       }
+      }
+     ]
+    },
+    {
+     "name": "vaccins",
+     "label": {
+      "Français (fr)": "Vaccins",
+      "English (en)": "Vaccines"
+     },
+     "type": "repeat",
+     "children": [
+      {
+       "name": "antigene",
+       "label": {
+        "Français (fr)": "Antigène",
+        "English (en)": "Antigen"
+       },
+       "type": "select one",
+       "itemset": "antigene",
+       "list_name": "antigene",
+       "children": [
+        {
+         "name": "bcg",
+         "label": {
+          "Français (fr)": "BCG",
+          "English (en)": "BCG"
+         }
+        },
+        {
+         "name": "penta",
+         "label": {
+          "Français (fr)": "Penta",
+          "English (en)": "Penta"
+         }
+        },
+        {
+         "name": "rr",
+         "label": {
+          "Français (fr)": "Rougeole-Rubéole",
+          "English (en)": "Measles-Rubella"
+         }
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "name": "nb_enfants",
+   "type": "calculate",
+   "bind": {
+    "calculate": "count(${prenom})"
+   }
+  },
+  {
+   "name": "merci",
+   "label": {
+    "Français (fr)": "Merci !",
+    "English (en)": "Thank you!"
+   },
+   "type": "note"
+  },
+  {
+   "name": "meta",
+   "control": {
+    "bodyless": true
+   },
+   "type": "group",
+   "children": [
+    {
+     "name": "instanceID",
+     "type": "calculate",
+     "bind": {
+      "readonly": "true()",
+      "jr:preload": "uid"
+     }
+    }
+   ]
+  }
+ ],
+ "choices": {
+  "milieu": [
+   {
+    "name": "urbain",
+    "label": {
+     "Français (fr)": "Urbain",
+     "English (en)": "Urban"
+    }
+   },
+   {
+    "name": "rural",
+    "label": {
+     "Français (fr)": "Rural",
+     "English (en)": "Rural"
+    }
+   }
+  ],
+  "biens": [
+   {
+    "name": "radio",
+    "label": {
+     "Français (fr)": "Radio",
+     "English (en)": "Radio"
+    }
+   },
+   {
+    "name": "tele",
+    "label": {
+     "Français (fr)": "Télévision",
+     "English (en)": "TV"
+    }
+   },
+   {
+    "name": "moto",
+    "label": {
+     "Français (fr)": "Moto",
+     "English (en)": "Motorbike"
+    }
+   },
+   {
+    "name": "velo",
+    "label": {
+     "Français (fr)": "Vélo",
+     "English (en)": "Bicycle"
+    }
+   }
+  ],
+  "sexe": [
+   {
+    "name": "f",
+    "label": {
+     "Français (fr)": "Féminin",
+     "English (en)": "Female"
+    }
+   },
+   {
+    "name": "m",
+    "label": {
+     "Français (fr)": "Masculin",
+     "English (en)": "Male"
+    }
+   }
+  ],
+  "antigene": [
+   {
+    "name": "bcg",
+    "label": {
+     "Français (fr)": "BCG",
+     "English (en)": "BCG"
+    }
+   },
+   {
+    "name": "penta",
+    "label": {
+     "Français (fr)": "Penta",
+     "English (en)": "Penta"
+    }
+   },
+   {
+    "name": "rr",
+    "label": {
+     "Français (fr)": "Rougeole-Rubéole",
+     "English (en)": "Measles-Rubella"
+    }
+   }
+  ]
+ }
+}

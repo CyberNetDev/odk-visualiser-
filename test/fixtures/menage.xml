@@ -1,0 +1,349 @@
+<?xml version="1.0"?>
+<h:html xmlns="http://www.w3.org/2002/xforms" xmlns:h="http://www.w3.org/1999/xhtml" xmlns:ev="http://www.w3.org/2001/xml-events" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:jr="http://openrosa.org/javarosa" xmlns:orx="http://openrosa.org/xforms" xmlns:odk="http://www.opendatakit.org/xforms">
+  <h:head>
+    <h:title>Enquête ménage</h:title>
+    <model odk:xforms-version="1.0.0">
+      <itext>
+        <translation lang="Français (fr)" default="true()">
+          <text id="milieu-0">
+            <value>Urbain</value>
+          </text>
+          <text id="milieu-1">
+            <value>Rural</value>
+          </text>
+          <text id="biens-0">
+            <value>Radio</value>
+          </text>
+          <text id="biens-1">
+            <value>Télévision</value>
+          </text>
+          <text id="biens-2">
+            <value>Moto</value>
+          </text>
+          <text id="biens-3">
+            <value>Vélo</value>
+          </text>
+          <text id="sexe-0">
+            <value>Féminin</value>
+          </text>
+          <text id="sexe-1">
+            <value>Masculin</value>
+          </text>
+          <text id="antigene-0">
+            <value>BCG</value>
+          </text>
+          <text id="antigene-1">
+            <value>Penta</value>
+          </text>
+          <text id="antigene-2">
+            <value>Rougeole-Rubéole</value>
+          </text>
+          <text id="/data/date_visite:label">
+            <value>Date de la visite</value>
+          </text>
+          <text id="/data/menage:label">
+            <value>Ménage</value>
+          </text>
+          <text id="/data/menage/chef:label">
+            <value>Nom du chef de ménage</value>
+          </text>
+          <text id="/data/menage/taille:label">
+            <value>Taille du ménage</value>
+          </text>
+          <text id="/data/menage/milieu:label">
+            <value>Milieu</value>
+          </text>
+          <text id="/data/menage/biens:label">
+            <value>Biens possédés</value>
+          </text>
+          <text id="/data/menage/revenu:label">
+            <value>Revenu mensuel</value>
+          </text>
+          <text id="/data/menage/gps:label">
+            <value>Position du ménage</value>
+          </text>
+          <text id="/data/membres:label">
+            <value>Membres du ménage</value>
+          </text>
+          <text id="/data/membres/prenom:label">
+            <value>Prénom</value>
+          </text>
+          <text id="/data/membres/age:label">
+            <value>Âge (années)</value>
+          </text>
+          <text id="/data/membres/sexe:label">
+            <value>Sexe</value>
+          </text>
+          <text id="/data/membres/vaccins:label">
+            <value>Vaccins</value>
+          </text>
+          <text id="/data/membres/vaccins/antigene:label">
+            <value>Antigène</value>
+          </text>
+          <text id="/data/merci:label">
+            <value>Merci !</value>
+          </text>
+        </translation>
+        <translation lang="English (en)">
+          <text id="milieu-0">
+            <value>Urban</value>
+          </text>
+          <text id="milieu-1">
+            <value>Rural</value>
+          </text>
+          <text id="biens-0">
+            <value>Radio</value>
+          </text>
+          <text id="biens-1">
+            <value>TV</value>
+          </text>
+          <text id="biens-2">
+            <value>Motorbike</value>
+          </text>
+          <text id="biens-3">
+            <value>Bicycle</value>
+          </text>
+          <text id="sexe-0">
+            <value>Female</value>
+          </text>
+          <text id="sexe-1">
+            <value>Male</value>
+          </text>
+          <text id="antigene-0">
+            <value>BCG</value>
+          </text>
+          <text id="antigene-1">
+            <value>Penta</value>
+          </text>
+          <text id="antigene-2">
+            <value>Measles-Rubella</value>
+          </text>
+          <text id="/data/date_visite:label">
+            <value>Visit date</value>
+          </text>
+          <text id="/data/menage:label">
+            <value>Household</value>
+          </text>
+          <text id="/data/menage/chef:label">
+            <value>Head of household</value>
+          </text>
+          <text id="/data/menage/taille:label">
+            <value>Household size</value>
+          </text>
+          <text id="/data/menage/milieu:label">
+            <value>Setting</value>
+          </text>
+          <text id="/data/menage/biens:label">
+            <value>Assets</value>
+          </text>
+          <text id="/data/menage/revenu:label">
+            <value>Monthly income</value>
+          </text>
+          <text id="/data/menage/gps:label">
+            <value>Household location</value>
+          </text>
+          <text id="/data/membres:label">
+            <value>Household members</value>
+          </text>
+          <text id="/data/membres/prenom:label">
+            <value>First name</value>
+          </text>
+          <text id="/data/membres/age:label">
+            <value>Age (years)</value>
+          </text>
+          <text id="/data/membres/sexe:label">
+            <value>Sex</value>
+          </text>
+          <text id="/data/membres/vaccins:label">
+            <value>Vaccines</value>
+          </text>
+          <text id="/data/membres/vaccins/antigene:label">
+            <value>Antigen</value>
+          </text>
+          <text id="/data/merci:label">
+            <value>Thank you!</value>
+          </text>
+        </translation>
+      </itext>
+      <instance>
+        <data id="enquete_menage" version="2026010101">
+          <debut/>
+          <fin/>
+          <date_visite/>
+          <menage>
+            <chef/>
+            <taille/>
+            <milieu/>
+            <biens/>
+            <revenu/>
+            <gps/>
+          </menage>
+          <membres jr:template="">
+            <prenom/>
+            <age/>
+            <sexe/>
+            <vaccins jr:template="">
+              <antigene/>
+            </vaccins>
+          </membres>
+          <membres>
+            <prenom/>
+            <age/>
+            <sexe/>
+            <vaccins>
+              <antigene/>
+            </vaccins>
+          </membres>
+          <nb_enfants/>
+          <merci/>
+          <meta>
+            <instanceID/>
+          </meta>
+        </data>
+      </instance>
+      <instance id="milieu">
+        <root>
+          <item>
+            <itextId>milieu-0</itextId>
+            <name>urbain</name>
+          </item>
+          <item>
+            <itextId>milieu-1</itextId>
+            <name>rural</name>
+          </item>
+        </root>
+      </instance>
+      <instance id="biens">
+        <root>
+          <item>
+            <itextId>biens-0</itextId>
+            <name>radio</name>
+          </item>
+          <item>
+            <itextId>biens-1</itextId>
+            <name>tele</name>
+          </item>
+          <item>
+            <itextId>biens-2</itextId>
+            <name>moto</name>
+          </item>
+          <item>
+            <itextId>biens-3</itextId>
+            <name>velo</name>
+          </item>
+        </root>
+      </instance>
+      <instance id="sexe">
+        <root>
+          <item>
+            <itextId>sexe-0</itextId>
+            <name>f</name>
+          </item>
+          <item>
+            <itextId>sexe-1</itextId>
+            <name>m</name>
+          </item>
+        </root>
+      </instance>
+      <instance id="antigene">
+        <root>
+          <item>
+            <itextId>antigene-0</itextId>
+            <name>bcg</name>
+          </item>
+          <item>
+            <itextId>antigene-1</itextId>
+            <name>penta</name>
+          </item>
+          <item>
+            <itextId>antigene-2</itextId>
+            <name>rr</name>
+          </item>
+        </root>
+      </instance>
+      <bind nodeset="/data/debut" jr:preload="timestamp" type="dateTime" jr:preloadParams="start"/>
+      <bind nodeset="/data/fin" jr:preload="timestamp" type="dateTime" jr:preloadParams="end"/>
+      <bind nodeset="/data/date_visite" type="date"/>
+      <bind nodeset="/data/menage/chef" type="string"/>
+      <bind nodeset="/data/menage/taille" type="int"/>
+      <bind nodeset="/data/menage/milieu" type="string"/>
+      <bind nodeset="/data/menage/biens" type="string"/>
+      <bind nodeset="/data/menage/revenu" type="decimal"/>
+      <bind nodeset="/data/menage/gps" type="geopoint"/>
+      <bind nodeset="/data/membres/prenom" type="string"/>
+      <bind nodeset="/data/membres/age" type="int"/>
+      <bind nodeset="/data/membres/sexe" type="string"/>
+      <bind nodeset="/data/membres/vaccins/antigene" type="string"/>
+      <bind nodeset="/data/nb_enfants" type="string" calculate="count( /data/membres/prenom )"/>
+      <bind nodeset="/data/merci" readonly="true()" type="string"/>
+      <bind nodeset="/data/meta/instanceID" type="string" readonly="true()" jr:preload="uid"/>
+    </model>
+  </h:head>
+  <h:body>
+    <input ref="/data/date_visite">
+      <label ref="jr:itext('/data/date_visite:label')"/>
+    </input>
+    <group appearance="field-list" ref="/data/menage">
+      <label ref="jr:itext('/data/menage:label')"/>
+      <input ref="/data/menage/chef">
+        <label ref="jr:itext('/data/menage/chef:label')"/>
+      </input>
+      <input ref="/data/menage/taille">
+        <label ref="jr:itext('/data/menage/taille:label')"/>
+      </input>
+      <select1 ref="/data/menage/milieu">
+        <label ref="jr:itext('/data/menage/milieu:label')"/>
+        <itemset nodeset="instance('milieu')/root/item">
+          <value ref="name"/>
+          <label ref="jr:itext(itextId)"/>
+        </itemset>
+      </select1>
+      <select ref="/data/menage/biens">
+        <label ref="jr:itext('/data/menage/biens:label')"/>
+        <itemset nodeset="instance('biens')/root/item">
+          <value ref="name"/>
+          <label ref="jr:itext(itextId)"/>
+        </itemset>
+      </select>
+      <input ref="/data/menage/revenu">
+        <label ref="jr:itext('/data/menage/revenu:label')"/>
+      </input>
+      <input ref="/data/menage/gps">
+        <label ref="jr:itext('/data/menage/gps:label')"/>
+      </input>
+    </group>
+    <group ref="/data/membres">
+      <label ref="jr:itext('/data/membres:label')"/>
+      <repeat nodeset="/data/membres">
+        <input ref="/data/membres/prenom">
+          <label ref="jr:itext('/data/membres/prenom:label')"/>
+        </input>
+        <input ref="/data/membres/age">
+          <label ref="jr:itext('/data/membres/age:label')"/>
+        </input>
+        <select1 ref="/data/membres/sexe">
+          <label ref="jr:itext('/data/membres/sexe:label')"/>
+          <itemset nodeset="instance('sexe')/root/item">
+            <value ref="name"/>
+            <label ref="jr:itext(itextId)"/>
+          </itemset>
+        </select1>
+        <group ref="/data/membres/vaccins">
+          <label ref="jr:itext('/data/membres/vaccins:label')"/>
+          <repeat nodeset="/data/membres/vaccins">
+            <select1 ref="/data/membres/vaccins/antigene">
+              <label ref="jr:itext('/data/membres/vaccins/antigene:label')"/>
+              <itemset nodeset="instance('antigene')/root/item">
+                <value ref="name"/>
+                <label ref="jr:itext(itextId)"/>
+              </itemset>
+            </select1>
+          </repeat>
+        </group>
+      </repeat>
+    </group>
+    <input ref="/data/merci">
+      <label ref="jr:itext('/data/merci:label')"/>
+    </input>
+  </h:body>
+</h:html>

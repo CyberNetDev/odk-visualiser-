@@ -24,7 +24,20 @@ class DataCache {
     this.mem = new Map();      // key -> gzip Buffer (Map order = LRU order)
     this.memBytes = 0;
     this.inflight = new Map(); // key -> Promise (one download per key at a time, whoever asks)
+    this.auxMem = new Map();   // key -> gzip Buffer of side data (memory-only mode)
     if (persist) this.load();
+  }
+
+  // Side data of an entry, never sent to the browser (e.g. ids of the submissions a repeat table covers)
+  async setAux(key, obj) {
+    const buf = await gzip(JSON.stringify(obj), { level: 6 });
+    if (!this.persist) { this.auxMem.set(key, buf); return; }
+    try { await writeAtomic(this.file(key, 'aux.gz'), buf); } catch (e) { console.warn('cache: écriture impossible :', e.message); }
+  }
+  async aux(key) {
+    let buf = this.persist ? await fs.promises.readFile(this.file(key, 'aux.gz')).catch(() => null) : this.auxMem.get(key);
+    if (!buf) return null;
+    try { return JSON.parse((await gunzip(buf)).toString('utf8')); } catch { return null; }
   }
 
   static key(parts) {
@@ -48,7 +61,8 @@ class DataCache {
       }
       for (const f of fs.readdirSync(this.dir)) {
         // orphan data files or interrupted writes
-        if (f.endsWith('.tmp') || (f.endsWith('.json.gz') && !this.index.has(f.slice(0, -'.json.gz'.length)))) fs.rmSync(path.join(this.dir, f), { force: true });
+        if (f.endsWith('.tmp') || (f.endsWith('.json.gz') && !this.index.has(f.slice(0, -'.json.gz'.length)))
+          || (f.endsWith('.aux.gz') && !this.index.has(f.slice(0, -'.aux.gz'.length)))) fs.rmSync(path.join(this.dir, f), { force: true });
       }
     } catch (e) { console.warn('cache: lecture du dossier impossible :', e.message); }
   }
@@ -63,7 +77,7 @@ class DataCache {
     while (this.memBytes > this.memMax && this.mem.size > 1) {
       const [k, b] = this.mem.entries().next().value;
       this.mem.delete(k); this.memBytes -= b.length;
-      if (!this.persist) this.index.delete(k); // memory-only mode: evicted = gone
+      if (!this.persist) { this.index.delete(k); this.auxMem.delete(k); } // memory-only mode: evicted = gone
     }
   }
 
@@ -134,9 +148,11 @@ class DataCache {
     const b = this.mem.get(key);
     if (b) { this.memBytes -= b.length; this.mem.delete(key); }
     this.index.delete(key);
+    this.auxMem.delete(key);
     if (this.persist) {
       fs.rmSync(this.file(key, 'json.gz'), { force: true });
       fs.rmSync(this.file(key, 'meta.json'), { force: true });
+      fs.rmSync(this.file(key, 'aux.gz'), { force: true });
     }
   }
 
