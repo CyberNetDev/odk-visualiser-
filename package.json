@@ -1,13 +1,15 @@
 {
   "name": "odk-visualizer",
-  "version": "2.0.0",
-  "description": "DHIS2 Data Visualizer-style charts, pivot tables and maps for ODK Central, IASO (Bluesquare) and CommCare HQ",
+  "version": "2.1.0",
+  "description": "DHIS2 Data Visualizer-style charts, pivot tables and maps for ODK Central, IASO, CommCare HQ, DHIS2 and mSupply",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
     "test": "node --test test/connectors.test.js",
     "sim:iaso": "node test/sim-iaso.js",
     "sim:commcare": "node test/sim-commcare.js",
+    "sim:dhis2": "node test/sim-dhis2.js",
+    "sim:msupply": "node test/sim-msupply.js",
     "docker:build": "docker compose build",
     "docker:up": "docker compose up -d",
     "docker:logs": "docker compose logs -f"
@@ -15,5 +17,8 @@
   "engines": {
     "node": ">=18"
   },
-  "license": "MIT"
+  "license": "MIT",
+  "devDependencies": {
+    "graphql": "^16.9.0"
+  }
 }

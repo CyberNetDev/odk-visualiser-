@@ -1,5 +1,6 @@
-// npm test — unit tests of the record normalisation + end-to-end tests of the IASO and CommCare connectors
-// against the simulators (test/sim-*.js), through the real server (no network needed).
+// npm test — unit tests of the record normalisation + end-to-end tests of the IASO, CommCare, DHIS2 and
+// mSupply connectors against the simulators (test/sim-*.js), through the real server (no network needed).
+// The mSupply simulator needs the "graphql" dev dependency: run "npm install" once.
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { spawn } = require('node:child_process');
@@ -10,6 +11,7 @@ const path = require('node:path');
 const { Schema, explode, descriptorSchema } = require('../connectors/records');
 const { toGeoPoint } = require('../connectors/common');
 const { extractFields } = require('../xform');
+const { periodStart } = require('../connectors/dhis2');
 
 const ROOT = path.join(__dirname, '..');
 const FIX = path.join(__dirname, 'fixtures');
@@ -38,6 +40,15 @@ test('explode: groups nested, repeats as child tables, single-entry repeat objec
   assert.deepEqual(t['Submissions.r.s'].map(r => [r.__id, r['__Submissions-r-id'], r.y]), [['A/r[1]/s[1]', 'A/r[1]', 'a'], ['A/r[1]/s[2]', 'A/r[1]', null]]);
 });
 
+test('DHIS2 periods → first day', () => {
+  assert.equal(periodStart('202403'), '2024-03-01');
+  assert.equal(periodStart('2024Q3'), '2024-07-01');
+  assert.equal(periodStart('2025W01'), '2024-12-30');
+  assert.equal(periodStart('2024April'), '2024-04-01');
+  assert.equal(periodStart('2024NovQ1'), '2023-11-01');
+  assert.equal(periodStart('202403B'), '2024-05-01');
+});
+
 // ------------------------------------------------------------------ end to end
 const procs = [];
 const start = (args, env = {}) => new Promise((resolve, reject) => {
@@ -59,10 +70,13 @@ async function call(p, { method = 'GET', body } = {}) {
   return { status: r.status, body: await r.json(), h: r.headers };
 }
 
-test('IASO and CommCare through the server', async t => {
+test('IASO, CommCare, DHIS2 and mSupply through the server', async t => {
   const cacheDir = fs.mkdtempSync(path.join(os.tmpdir(), 'odkvis-'));
   await start(['test/sim-iaso.js', String(port + 100)]);
   await start(['test/sim-commcare.js', String(port + 110)]);
+  await start(['test/sim-dhis2.js', String(port + 120), '2.41.3']);
+  await start(['test/sim-dhis2.js', String(port + 122), '2.40.5']);
+  await start(['test/sim-msupply.js', String(port + 130)]);
   await start(['server.js'], { PORT: String(port), CACHE_DIR: cacheDir });
 
   await t.test('IASO', async () => {
@@ -94,5 +108,55 @@ test('IASO and CommCare through the server', async t => {
     assert.ok(!rows.some(r => r.case || r.meta), 'case blocks and meta are not form fields');
     const L = (await call(`/api/projects/demo-nutrition/forms/${fid}/labels`)).body;
     assert.equal(L.choices['enfants/etat'].mas.fr, 'Malnutrition sévère');
+  });
+
+  for (const [version, p] of [['2.41', port + 120], ['2.40', port + 122]]) {
+    await t.test(`DHIS2 ${version}`, async () => {
+      cookie = '';
+      const bad = await call("/api/login", { method: "POST", body: { platform: "dhis2", server: `http://localhost:${p}`, email: "admin", password: "x" } });
+      assert.equal(bad.status, 401, JSON.stringify(bad.body));
+      const me = await call('/api/login', { method: 'POST', body: { platform: 'dhis2', server: `http://localhost:${p}/dhis-web-dashboard/`, email: 'admin', password: 'district' } });
+      assert.equal(me.body.platform, 'dhis2');
+      assert.deepEqual((await call('/api/projects')).body.map(x => x.id), ['evenements', 'tracker', 'agrege']);
+      const ev = (await call('/api/projects/evenements/forms/prgPalu0001/data')).body.rows;
+      assert.equal(ev.length, 2500);
+      assert.equal(ev[0].__system.level1, 'Togo');
+      const sept = (await call('/api/projects/evenements/forms/prgPalu0001/data?from=2026-09-01&to=2026-09-30')).body.rows;
+      assert.ok(sept.length > 0 && sept.every(r => r.__system.submissionDate.startsWith('2026-09')));
+      assert.deepEqual((await call('/api/projects/tracker/forms/prgCPN00001/tables')).body, ['Submissions', 'Submissions.stgVisite01', 'Submissions.stgAccouch1']);
+      const en = (await call('/api/projects/tracker/forms/prgCPN00001/data')).body.rows;
+      const visits = (await call('/api/projects/tracker/forms/prgCPN00001/data?table=Submissions.stgVisite01')).body.rows;
+      const ids = new Set(en.map(r => r.__id));
+      assert.ok(visits.length > en.length && visits.every(v => ids.has(v['__Submissions-id'])));
+      const L = (await call('/api/projects/tracker/forms/prgCPN00001/labels')).body;
+      assert.equal(L.fields['stgVisite01/dePoids0001'].fr, 'Poids (kg)');
+      const agg = (await call('/api/projects/agrege/forms/dsSMI000001/data')).body.rows;
+      assert.ok(agg.length > 1000 && agg.every(r => r.__system.submissionDate));
+      // restricted user: only the Plateaux region
+      cookie = '';
+      await call('/api/login', { method: 'POST', body: { platform: 'dhis2', server: `http://localhost:${p}`, email: 'agent', password: 'agent123' } });
+      const mine = (await call('/api/projects/evenements/forms/prgPalu0001/data')).body.rows;
+      assert.ok(mine.length > 0 && mine.length < 2500 && mine.every(r => r.__system.level2 === 'Plateaux'));
+    });
+  }
+
+  await t.test('mSupply', async () => {
+    cookie = '';
+    assert.equal((await call('/api/login', { method: 'POST', body: { platform: 'msupply', server: `http://localhost:${port + 130}`, email: 'admin', password: 'x' } })).status, 401);
+    const me = await call('/api/login', { method: 'POST', body: { platform: 'msupply', server: `http://localhost:${port + 130}/graphql`, email: 'admin', password: 'pass' } });
+    assert.equal(me.body.platform, 'msupply');
+    assert.equal((await call('/api/projects')).body.length, 2);
+    const stock = (await call('/api/projects/store-central/forms/stock/data')).body.rows;
+    assert.ok(stock.length > 0 && stock.every(r => r.packs_total > 0 && r.units_total === r.packs_total * r.pack_size));
+    const out = (await call('/api/projects/store-central/forms/outbound/data')).body.rows;
+    const lines = (await call('/api/projects/store-central/forms/outbound/data?table=Submissions.lignes')).body.rows;
+    assert.equal(out.length, 700);
+    assert.ok(lines.every(l => out.some(o => o.__id === l['__Submissions-id'])));
+    // mSupply Desktop (REST v4), mSupply user
+    cookie = '';
+    const d = await call('/api/login', { method: 'POST', body: { platform: 'msupply', server: `http://localhost:${port + 131}`, email: 'gestionnaire', password: 'pass' } });
+    assert.equal(d.status, 200);
+    assert.deepEqual((await call('/api/projects/store/forms')).body.map(f => f.id), ['storeInvoices']);
+    assert.ok((await call('/api/projects/store/forms/storeInvoices/data')).body.rows.length > 100);
   });
 });

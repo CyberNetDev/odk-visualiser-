@@ -1,14 +1,15 @@
 // ODK Visualizer — zero-dependency Node (>=18) server.
 // - Each user signs in from the app with THEIR OWN account on their data platform: ODK Central, IASO
-//   (Bluesquare) or CommCare HQ (connectors/). The password is sent once to the platform and never
-//   stored; the server keeps only the platform's session token (or API key) in memory, linked to an
-//   HttpOnly cookie. Users see only the projects their account can see.
+//   (Bluesquare), CommCare HQ, DHIS2 or mSupply (connectors/). Passwords are never stored: the server
+//   keeps the platform's session token in memory (for CommCare and DHIS2 Basic auth, the credentials
+//   themselves, which go with every call), linked to an HttpOnly cookie. Users see only what their
+//   account can see.
 // - Proxies the platform APIs (avoids CORS), pages through results and turns every platform's records
 //   into the same row shape (the one of ODK Central's OData feed).
 // - Caches heavy downloads (cache.js): memory + gzip files on disk, stale-while-revalidate, incremental
-//   refresh (only new/edited submissions) and gzip/ETag responses. ODK entries are shared between users
-//   of the same server after checking each user's access; IASO and CommCare entries are per user
-//   (those platforms restrict submissions by org unit / location).
+//   refresh (only new/edited records) and gzip/ETag responses. ODK entries are shared between users
+//   of the same server after checking each user's access; entries of the other platforms are per user
+//   (they restrict records by org unit, location or store).
 // - Stores saved visualizations and field transformations per server in data/*.json.
 // - Serves the frontend from /public.
 // Every setting is optional (see .env.example): nothing is required to start the app.
@@ -34,12 +35,12 @@ const CACHE_FULL_REFRESH_HOURS = Number(process.env.CACHE_FULL_REFRESH_HOURS || 
 const CACHE_PERSIST = !/^(0|false|no)$/i.test(process.env.CACHE_PERSIST || 'true');
 const CACHE_MEMORY_MB = Number(process.env.CACHE_MEMORY_MB || 256);
 const CACHE_DISK_MB = Number(process.env.CACHE_DISK_MB || 2048);
-// Platforms offered on the login screen, in this order (comma separated: odk, iaso, commcare)
-const PLATFORMS = (process.env.PLATFORMS || 'odk,iaso,commcare').split(',').map(s => s.trim().toLowerCase()).filter(p => CONNECTORS[p]);
+// Platforms offered on the login screen, in this order (comma separated: odk, iaso, commcare, dhis2, msupply)
+const PLATFORMS = (process.env.PLATFORMS || 'odk,iaso,commcare,dhis2,msupply').split(',').map(s => s.trim().toLowerCase()).filter(p => CONNECTORS[p]);
 if (!PLATFORMS.length) PLATFORMS.push('odk');
 // Per platform: server pre-filled on the login screen, and optional lock (users cannot change it).
 // ODK_URL kept for compatibility.
-const ENV = { odk: 'ODK', iaso: 'IASO', commcare: 'COMMCARE' };
+const ENV = { odk: 'ODK', iaso: 'IASO', commcare: 'COMMCARE', dhis2: 'DHIS2', msupply: 'MSUPPLY' };
 const SERVERS = Object.fromEntries(PLATFORMS.map(p => {
   const C = CONNECTORS[p];
   const def = C.normalizeServer(process.env[`${ENV[p]}_DEFAULT_URL`] || (p === 'odk' ? process.env.ODK_URL : '') || '');
@@ -165,7 +166,8 @@ function refreshEntry(key, ctx, mode = 'auto') {
       return meta;
     };
     if (!m || mode === 'full') return full(m ? 'demandé' : 'premier chargement');
-    if (t0 - (m.fullAt || 0) > CACHE_FULL_REFRESH_HOURS * 3600e3) return full('rechargement complet périodique');
+    // some sources cannot detect every change (mSupply: edits without a status change): reload them more often
+    if (t0 - (m.fullAt || 0) > Math.min(CACHE_FULL_REFRESH_HOURS, src.fullRefreshHours || Infinity) * 3600e3) return full('rechargement complet périodique');
     if (!C.incremental(ctx.server)) return full('serveur sans requêtes incrémentales');
     const since = new Date((m.at || 0) - 120_000).toISOString(); // 2 min overlap: clock skew, uploads in progress
     try {
@@ -174,13 +176,15 @@ function refreshEntry(key, ctx, mode = 'auto') {
         return dataCache.touch(key, { at: t0, checks: (m.checks || 0) + 1, last: { kind: 'check', ms: Date.now() - t0 } });
       }
       const child = table !== 'Submissions';
-      if ((child && !src.childDelta) || !src.delta || !changed) return full(changed ? `${changed} soumission(s) nouvelle(s) ou modifiée(s)` : 'suppression ou changement d\'état de revue');
+      if ((child && !src.childDelta) || !src.delta || !changed) return full(src.reloadReason || (changed ? `${changed} soumission(s) nouvelle(s) ou modifiée(s)` : 'suppression ou changement d\'état de revue'));
       const [delta, old, aux] = await Promise.all([src.delta(filter, since, table), dataCache.payload(key), child ? dataCache.aux(key) : null]);
       if (!old || (child && !aux)) return full('cache illisible');
-      let rows, added = 0, updated = 0, covered;
+      let rows, added = 0, updated = 0, removed = 0, covered;
       if (!child) {
         const byId = new Map(old.rows.map(r => [r.__id, r]));
         for (const r of delta.rows) { if (byId.has(r.__id)) updated++; else added++; byId.set(r.__id, r); }
+        // sources that report deletions (DHIS2 aggregate data: includeDeleted)
+        for (const id of delta.removed || []) if (byId.delete(id)) removed++;
         rows = [...byId.values()];
         covered = rows.length;
       } else {
@@ -196,10 +200,11 @@ function refreshEntry(key, ctx, mode = 'auto') {
         covered = roots.size;
       }
       // deletions or rows leaving the filter (e.g. now "rejected") are invisible to a delta: verify the total
-      if ((await src.count('Submissions', filter)) !== covered) return full('suppression ou changement d\'état détecté');
+      // (sources without a cheap count report deletions themselves: count = null)
+      if (src.count && (await src.count('Submissions', filter)) !== covered) return full('suppression ou changement d\'état détecté');
       const ms = Date.now() - t0;
-      console.log(`cache: ${ctx.fid}/${table} incrémental : +${added} nouvelles, ${updated} modifiées en ${ms} ms`);
-      const meta = await dataCache.set(key, { ...m, at: t0, dataAt: t0, rows: rows.length, rootSig, fetchMs: ms, mode: 'delta', last: { kind: 'delta', added, updated, ms } }, { rows, filtered: old.filtered });
+      console.log(`cache: ${ctx.fid}/${table} incrémental : +${added} nouvelles, ${updated} modifiées${removed ? `, ${removed} supprimées` : ''} en ${ms} ms`);
+      const meta = await dataCache.set(key, { ...m, at: t0, dataAt: t0, rows: rows.length, rootSig, fetchMs: ms, mode: 'delta', last: { kind: 'delta', added, updated, removed, ms } }, { rows, filtered: old.filtered });
       if (child) await dataCache.setAux(key, aux);
       return meta;
     } catch (e) {

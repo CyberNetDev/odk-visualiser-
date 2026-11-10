@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Guide d'utilisation — ODK Visualizer</title>
-  <meta name="description" content="Comment utiliser ODK Visualizer avec ODK Central, IASO et CommCare : connexion, premier graphique, types de visualisation, filtres, libellés, répétitions, formateur de champs, enregistrement et partage.">
+  <meta name="description" content="Comment utiliser ODK Visualizer avec ODK Central, IASO, CommCare, DHIS2 et mSupply : connexion, premier graphique, types de visualisation, filtres, libellés, répétitions, formateur de champs, enregistrement et partage.">
   <style>
     :root { --bg: #f4f6f8; --panel: #fff; --ink: #1f2933; --muted: #637381; --line: #dfe3e8; --accent: #1565c0; --accent-soft: #e3eefb; --warn: #8a6100; --warn-bg: #fff3cd; --mark: #f57c00; }
     * { box-sizing: border-box; }
@@ -106,7 +106,7 @@
 <main>
 <section id="presentation">
   <h1>À quoi sert ODK Visualizer ?</h1>
-  <p class="lead">ODK Visualizer transforme les soumissions de vos formulaires <b>ODK Central</b>, <b>IASO</b> (Bluesquare) ou <b>CommCare</b> (Dimagi) en graphiques, tableaux croisés et cartes, directement dans le navigateur. Il n'y a ni export Excel ni code à écrire.</p>
+  <p class="lead">ODK Visualizer transforme vos données <b>ODK Central</b>, <b>IASO</b> (Bluesquare), <b>CommCare</b> (Dimagi), <b>DHIS2</b> et <b>mSupply</b> (formulaires, programmes, données agrégées, stock et distributions) en graphiques, tableaux croisés et cartes, directement dans le navigateur. Il n'y a ni export Excel ni code à écrire.</p>
   <p>Le fonctionnement s'inspire du <i>Data Visualizer</i> de DHIS2 :</p>
   <ul>
     <li>vous placez des <b>champs</b> du formulaire en <b>Colonnes</b>, en <b>Lignes</b> ou en <b>Filtre</b> ;</li>
@@ -115,14 +115,14 @@
     <li>vous pouvez ensuite <b>enregistrer</b> la visualisation, la <b>partager</b> par un lien et la <b>télécharger</b> (image ou tableau).</li>
   </ul>
   <div class="grid2">
-    <div><h3>Pour qui ?</h3><p>Les gestionnaires de données, les superviseurs, les coordinateurs de projet et les partenaires qui ont un compte sur ODK Central, IASO ou CommCare HQ et veulent suivre les résultats d'une enquête sans manipuler de fichiers.</p></div>
+    <div><h3>Pour qui ?</h3><p>Les gestionnaires de données, les superviseurs, les logisticiens, les coordinateurs de projet et les partenaires qui ont un compte sur ODK Central, IASO, CommCare HQ, DHIS2 ou mSupply et veulent suivre leurs résultats sans manipuler de fichiers.</p></div>
     <div><h3>Ce que l'outil ne fait pas</h3><p>Il ne modifie jamais vos données ni vos formulaires sur la plateforme : il les <b>lit</b> seulement. Les champs calculés et les regroupements que vous créez n'existent que dans ODK Visualizer.</p></div>
   </div>
 </section>
 
 <section id="connexion">
   <h2>Se connecter</h2>
-  <p>En haut du cadre de connexion, choisissez d'abord votre <b>plateforme</b> : <b>ODK Central</b>, <b>IASO</b> ou <b>CommCare</b>. Les champs à remplir s'adaptent. Selon l'installation, une seule plateforme peut être proposée.</p>
+  <p>En haut du cadre de connexion, choisissez d'abord votre <b>plateforme</b> : <b>ODK Central</b>, <b>IASO</b>, <b>CommCare</b>, <b>DHIS2</b> ou <b>mSupply</b>. Les champs à remplir s'adaptent. Selon l'installation, une seule plateforme peut être proposée.</p>
   <h3 id="connexion-odk">ODK Central</h3>
   <ol class="steps">
     <li><b>Serveur ODK Central</b> : l'adresse que vous utilisez pour ouvrir Central dans votre navigateur, par exemple <code>https://central.monorg.org</code>. Vous pouvez coller l'adresse complète d'une page de Central : elle est nettoyée automatiquement. Sur certaines installations, ce champ est déjà rempli et ne peut pas être modifié.</li>
@@ -154,10 +154,39 @@
   </ol>
   <p>Les <b>projets</b> sont vos espaces de projet CommCare ; les <b>formulaires</b> apparaissent sous la forme <i>Application › Module › Formulaire</i>, avec les libellés de la dernière version de l'application. Le compte doit avoir les droits <b>Accès à l'API</b> et <b>Modifier les données</b> (exigés par l'API de CommCare). Le filtre de dates porte sur la <b>date de réception</b> par le serveur ; les champs <i>Début de saisie</i> et <i>Fin de saisie</i> permettent de calculer une durée avec le formateur.</p>
 
+  <h3 id="connexion-dhis2">DHIS2</h3>
+  <ol class="steps">
+    <li><b>Serveur DHIS2</b> : l'adresse de votre DHIS2, par exemple <code>https://dhis2.monministere.org</code>. Si vous collez l'adresse d'une application (<code>…/dhis-web-dashboard/</code>), elle est nettoyée.</li>
+    <li><b>Nom d'utilisateur et mot de passe</b> de votre compte DHIS2, ou un <b>jeton d'accès personnel</b> (<code>d2pat_…</code>, DHIS2 2.38 et plus) dans le champ mot de passe : le nom d'utilisateur devient alors facultatif. Pour créer un jeton : DHIS2 → votre profil → <i>Jetons d'accès personnels</i>.</li>
+  </ol>
+  <p>Le menu <b>Type de données</b> propose trois sources, selon ce que votre compte peut voir :</p>
+  <ul>
+    <li><b>Programmes d'événements</b> : une ligne par événement, avec les éléments de données du programme, la date de l'événement, son statut et la position GPS.</li>
+    <li><b>Programmes tracker</b> : une ligne par <b>inscription</b>, avec les attributs de la personne suivie (âge, village…). Chaque <b>étape du programme</b> (par exemple <i>Visite CPN</i>, <i>Accouchement</i>) est une table jointe, comme les groupes répétés d'ODK : en choisissant la table d'une étape, les attributs de l'inscription restent disponibles (↑).</li>
+    <li><b>Données agrégées</b> : une ligne par valeur saisie (élément de données × désagrégation × période × unité d'organisation). Choisissez <b>Somme de</b> → <b>Valeur</b> dans <i>Valeur</i>, <i>Élément de données</i> en Colonnes et <i>Début de la période</i> en Lignes pour suivre un indicateur mois par mois. Sans dates choisies, les <b>12 derniers mois</b> sont chargés.</li>
+  </ul>
+  <figure><img src="aide/dhis2-agrege.png" width="1366" height="860" alt="Courbe de la somme des valeurs par mois pour trois éléments de données DHIS2 : CPN1, accouchements assistés et Penta 3" loading="lazy"><figcaption>Données agrégées DHIS2 : somme de <i>Valeur</i>, éléments de données en Colonnes, mois en Lignes.</figcaption></figure>
+  <p>Comme avec IASO, le groupe <b>Unité d'organisation et hiérarchie</b> donne un champ par niveau de la pyramide (<i>Niveau 2 · Région</i>, <i>Niveau 3 · District</i>…). Les libellés et les options sont affichés dans la langue de votre compte, avec les traductions de DHIS2 dans le menu <b>Libellés</b>. Vous ne voyez que les données de vos unités d'organisation.</p>
+  <div class="note">Programmes tracker : DHIS2 2.36 ou plus récent. Les programmes d'événements fonctionnent aussi avec les versions plus anciennes. Avant la version 2.41, le filtre de dates est appliqué après le téléchargement.</div>
+
+  <h3 id="connexion-msupply">mSupply</h3>
+  <ol class="steps">
+    <li><b>Serveur mSupply</b> : l'adresse de votre serveur <b>Open mSupply</b> (central ou site, par exemple <code>https://msupply.monorg.org:8000</code>) ou du <b>serveur web de mSupply Desktop</b>. L'application reconnaît le type de serveur.</li>
+    <li><b>Nom d'utilisateur et mot de passe</b> de votre compte mSupply.</li>
+  </ol>
+  <p>Le menu <b>Magasin</b> liste les magasins de votre compte, et le menu <b>Données</b> propose, pour Open mSupply :</p>
+  <ul>
+    <li><b>Stock disponible</b> : une ligne par lot, avec quantités (conditionnements et unités), valeur du stock, date de péremption et un champ <b>Péremption</b> prêt à l'emploi (périmé, moins de 3 mois, 3 à 6 mois…). C'est une photo du stock du moment : le filtre de dates n'existe pas ici.</li>
+    <li><b>Expéditions sortantes</b>, <b>Réceptions</b>, <b>Dispensations</b> et <b>Ajustements d'inventaire</b> : une ligne par transaction (statut, client ou fournisseur, dates, montant) et une table jointe <b>Lignes (articles)</b> avec les quantités par article. Exemple : quantités distribuées par article et par client.</li>
+    <li><b>Réquisitions envoyées</b> et <b>reçues</b> : quantités demandées, approuvées et fournies, consommation mensuelle moyenne, stock disponible et <b>mois de stock</b> par article.</li>
+  </ul>
+  <p>Avec <b>mSupply Desktop</b>, l'API web est prévue pour les commandes des clients et donne moins d'informations : les <b>factures clients confirmées</b> pour un utilisateur mSupply (les 3 dernières années par défaut), ou le stock et les factures en cours pour un contact client.</p>
+  <div class="note">mSupply n'indique pas les transactions « modifiées depuis » : l'application détecte les nouvelles transactions et les changements de statut, et recharge tout au moins toutes les heures. Le stock est rechargé à chaque actualisation.</div>
+
   <h3>Pour toutes les plateformes</h3>
   <ul>
-    <li>Votre mot de passe (ou votre clé API) est transmis uniquement à votre plateforme et n'est <b>jamais enregistré</b> par l'application. Pendant la session, le serveur ne garde que le jeton de session en mémoire (la clé API pour CommCare).</li>
-    <li>La session dure aussi longtemps que celle de Central (24 heures par défaut), et 12 heures pour IASO et CommCare. Quand elle expire, l'écran de connexion réapparaît.</li>
+    <li>Votre mot de passe (ou votre clé API) est transmis uniquement à votre plateforme et n'est <b>jamais enregistré</b> par l'application. Pendant la session, le serveur garde en mémoire le jeton de session de la plateforme, ou vos identifiants quand la plateforme n'a pas de jeton de session (clé API CommCare, mot de passe ou jeton DHIS2).</li>
+    <li>La session dure aussi longtemps que celle de Central (24 heures par défaut), 12 heures pour IASO, CommCare, DHIS2 et Open mSupply, 2 heures pour mSupply Desktop. Quand elle expire, l'écran de connexion réapparaît.</li>
     <li>Le menu à votre nom, en haut à droite, rappelle la plateforme et le serveur, et permet de <b>changer de serveur ou de compte</b> et de <b>se déconnecter</b>.</li>
     <li>Le bouton <b>Essayer avec des données de démonstration</b> ouvre une enquête fictive (1 200 ménages) pour découvrir l'outil sans compte. Il peut être désactivé par l'administrateur.</li>
   </ul>
@@ -254,7 +283,7 @@
 <section id="filtres">
   <h2>Période et filtres</h2>
   <ul>
-    <li><b>Soumis du… au…</b> limite les données à une période : date de <b>soumission</b> (ODK Central), de <b>création</b> (IASO) ou de <b>réception</b> (CommCare). Le filtre est appliqué par la plateforme, donc moins de données sont téléchargées. Le filtre <b>État de revue</b> n'existe que pour ODK Central.</li>
+    <li><b>Soumis du… au…</b> limite les données à une période : date de <b>soumission</b> (ODK Central), de <b>création</b> (IASO, transactions mSupply) ou de <b>réception</b> (CommCare), date de l'<b>événement</b>, de l'<b>inscription</b> ou <b>période</b> des valeurs (DHIS2). Son libellé change selon la source ; il disparaît pour le stock mSupply, qui n'a pas de date. Le filtre est appliqué par la plateforme, donc moins de données sont téléchargées. Le filtre <b>État de revue</b> n'existe que pour ODK Central.</li>
     <li><b>État de revue</b> : toutes les soumissions, sans les rejetées, ou seulement les approuvées.</li>
     <li><b>Filtre sur un champ</b> : placez le champ dans <b>Filtre</b> et cochez les valeurs à garder. Le filtre apparaît dans le rappel sous le titre et sur les images téléchargées.</li>
     <li><b>Choix multiples</b> : un ménage qui a coché « paludisme » et « toux » compte dans les deux catégories. Le total peut donc dépasser le nombre de ménages. Ce comportement se désactive en cliquant sur le champ placé.</li>
@@ -324,7 +353,7 @@
   <h2>Enregistrer, partager, télécharger</h2>
   <ul>
     <li><b>Enregistrer</b> garde la mise en page, le type, les filtres, les options et le titre. <b>Enregistrer sous…</b> crée une copie.</li>
-    <li><b>Ouvrir</b> liste les visualisations enregistrées sur votre serveur (ODK Central, IASO ou CommCare) pour les projets auxquels vous avez accès.</li>
+    <li><b>Ouvrir</b> liste les visualisations enregistrées sur votre serveur (ODK Central, IASO, CommCare, DHIS2 ou mSupply) pour les projets auxquels vous avez accès.</li>
     <li><b>Partager</b> : une visualisation enregistrée a une adresse propre (se terminant par <code>#/…</code>). Copiez-la depuis la barre d'adresse. La personne qui l'ouvre doit se connecter au même serveur et avoir accès au projet.</li>
     <li>Seul l'auteur peut modifier ou supprimer une visualisation. Les autres utilisateurs peuvent l'ouvrir, puis l'<b>enregistrer sous</b> un autre nom.</li>
   </ul>
@@ -368,7 +397,7 @@
     <li><b>↻ actualiser</b> ne télécharge que les soumissions nouvelles ou modifiées : c'est rapide. <kbd>Maj</kbd> + clic recharge tout.</li>
     <li>Le <b>premier chargement</b> d'un très gros formulaire peut prendre une minute. Les suivants sont rapides.</li>
     <li>Le menu à votre nom → <b>Cache des données</b> montre ce qui est en mémoire et permet de le vider.</li>
-    <li>Avec <b>ODK Central</b>, le cache d'un formulaire est partagé entre les utilisateurs du même serveur, après vérification des droits de chacun. Avec <b>IASO</b> et <b>CommCare</b>, il est propre à chaque compte, car ces plateformes limitent les soumissions visibles selon l'utilisateur.</li>
+    <li>Avec <b>ODK Central</b>, le cache d'un formulaire est partagé entre les utilisateurs du même serveur, après vérification des droits de chacun. Avec <b>IASO</b>, <b>CommCare</b>, <b>DHIS2</b> et <b>mSupply</b>, il est propre à chaque compte, car ces plateformes limitent les données visibles selon l'utilisateur (unités d'organisation, lieux, magasins).</li>
   </ul>
 </section>
 
@@ -378,6 +407,10 @@
   <details><summary>IASO : je vois moins de soumissions que mon collègue</summary><p>C'est normal si vos comptes sont rattachés à des unités d'organisation différentes : IASO limite les soumissions visibles selon l'utilisateur, et l'application respecte cette limite (le cache est propre à chaque compte).</p></details>
   <details><summary>CommCare : « Identifiant ou clé API incorrects »</summary><p>Vérifiez que vous utilisez l'<b>e-mail de votre compte web</b> CommCare HQ et une <b>clé API</b> valide (elles peuvent expirer ou être limitées à un projet). Avec la double authentification ou le SSO, le mot de passe ne fonctionne pas : il faut une clé API. Vérifiez aussi le serveur (www, eu ou india).</p></details>
   <details><summary>CommCare : « pas accès à ces données »</summary><p>L'API de CommCare exige les droits <b>Accès à l'API</b> et <b>Modifier les données</b> sur le projet. Demandez-les à l'administrateur du projet CommCare.</p></details>
+  <details><summary>DHIS2 : la connexion est refusée</summary><p>Vérifiez l'adresse (sans <code>/dhis-web-…</code>), le nom d'utilisateur et le mot de passe : après plusieurs échecs, DHIS2 verrouille le compte quelques minutes. Si votre DHIS2 utilise une connexion unique (OpenID), créez un <b>jeton d'accès personnel</b> et collez-le dans le champ mot de passe. Un jeton peut être limité à certaines adresses IP : celle du serveur d'ODK Visualizer doit y figurer.</p></details>
+  <details><summary>DHIS2 : les données agrégées sont longues à charger</summary><p>Elles sont téléchargées valeur par valeur pour toutes vos unités d'organisation. Choisissez une période plus courte avec les dates : sans dates, les 12 derniers mois sont chargés.</p></details>
+  <details><summary>mSupply : « ne répond ni comme Open mSupply ni comme mSupply Desktop »</summary><p>L'adresse doit être celle du serveur, avec son port s'il y en a un (par exemple <code>:8000</code> pour Open mSupply), sans <code>/graphql</code> ni chemin de page. Pour mSupply Desktop, le serveur web doit être activé.</p></details>
+  <details><summary>mSupply : une modification n'apparaît pas encore</summary><p>Les modifications d'une transaction qui ne changent pas son statut sont prises en compte au rechargement complet (au moins toutes les heures). Pour les voir tout de suite : <kbd>Maj</kbd> + clic sur ↻ actualiser.</p></details>
   <details><summary>« E-mail ou mot de passe incorrect » alors que j'utilise ODK Collect sans problème</summary><p>ODK Collect utilise un <b>utilisateur mobile</b> (QR code), qui ne peut pas se connecter ici. Il vous faut un <b>compte web</b> ODK Central, celui qui sert à ouvrir Central dans un navigateur.</p></details>
   <details><summary>Le graphique affiche « Aucune donnée pour cette sélection »</summary><p>Vérifiez la période (<b>Soumis du… au…</b>), l'<b>état de revue</b> et les valeurs cochées dans les champs placés en <b>Filtre</b>. Un filtre trop strict peut tout exclure.</p></details>
   <details><summary>Je vois des codes (<code>protected_well</code>) au lieu des libellés</summary><p>Vérifiez que l'option <b>Libellés</b> n'est pas sur « Valeurs brutes ». Si le problème persiste, les libellés n'ont pas pu être lus pour ce formulaire, ou la valeur vient d'une ancienne version du formulaire qui n'existe plus dans la liste de choix.</p></details>
@@ -391,7 +424,7 @@
   <h2>Glossaire</h2>
   <table>
     <tr><th>Terme</th><th>Définition</th><th>Équivalent DHIS2</th></tr>
-    <tr><td>Soumission</td><td>Un formulaire rempli et envoyé à la plateforme (ODK Central, IASO, CommCare)</td><td>Événement</td></tr>
+    <tr><td>Soumission</td><td>Un formulaire rempli et envoyé à la plateforme (ODK Central, IASO, CommCare) ; pour DHIS2 et mSupply, une ligne de la table principale (événement, inscription, valeur, lot, transaction)</td><td>Événement</td></tr>
     <tr><td>Champ</td><td>Une question du formulaire, ou un champ transformé</td><td>Élément de données</td></tr>
     <tr><td>Choix</td><td>Une réponse possible d'une question à choix</td><td>Option</td></tr>
     <tr><td>Groupe répété</td><td>Partie du formulaire remplie plusieurs fois (membres, visites…)</td><td>Section répétable</td></tr>
@@ -401,6 +434,8 @@
     <tr><td>Unité d'organisation (IASO)</td><td>Lieu auquel une soumission IASO est rattachée, avec ses niveaux de pyramide (pays, région, district…)</td><td>Unité d'organisation</td></tr>
     <tr><td>Espace de projet (CommCare)</td><td>Le « projet » CommCare HQ, qui contient les applications et leurs formulaires</td><td>—</td></tr>
     <tr><td>Clé API (CommCare)</td><td>Code secret à créer dans CommCare HQ, à utiliser à la place du mot de passe</td><td>Jeton d'accès personnel</td></tr>
+    <tr><td>Inscription (DHIS2 tracker)</td><td>Une personne suivie dans un programme, avec ses attributs ; ses événements sont dans les tables des étapes</td><td>Enrollment</td></tr>
+    <tr><td>Lot (mSupply)</td><td>Une ligne de stock : un article, un numéro de lot, une date de péremption et une taille de conditionnement</td><td>—</td></tr>
     <tr><td>Visualisation enregistrée</td><td>Mise en page, filtres et type gardés sous un nom</td><td>Favori</td></tr>
     <tr><td>Libellé</td><td>Texte affiché d'une question ou d'un choix, dans une langue du formulaire</td><td>Nom</td></tr>
     <tr><td>Cache</td><td>Copie des données gardée par le serveur pour aller plus vite</td><td>Tables d'analyse</td></tr>

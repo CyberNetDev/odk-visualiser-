@@ -5,8 +5,10 @@
 const odk = require('./odk');
 const iaso = require('./iaso');
 const commcare = require('./commcare');
+const dhis2 = require('./dhis2');
+const msupply = require('./msupply');
 
-const ALL = { odk, iaso, commcare };
+const ALL = { odk, iaso, commcare, dhis2, msupply };
 
 // Servers proposed on the login screen (the user can type another one)
 const PRESETS = {
@@ -17,6 +19,8 @@ const PRESETS = {
     { url: 'https://eu.commcarehq.org', label: 'CommCare HQ — Europe (eu.commcarehq.org)' },
     { url: 'https://india.commcarehq.org', label: 'CommCare HQ — Inde (india.commcarehq.org)' },
   ],
+  dhis2: [],
+  msupply: [],
 };
 
 module.exports = { ALL, PRESETS };

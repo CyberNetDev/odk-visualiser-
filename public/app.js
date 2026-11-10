@@ -375,9 +375,9 @@ function readiness() {
     const ex = exampleFields();
     const n = data.length.toLocaleString('fr-FR');
     return `<div class="welcome">
-      <strong>Le formulaire est chargé : ${n} ${state.table === 'Submissions' ? 'soumissions' : 'lignes'}. Créez votre premier graphique :</strong>
+      <strong>Les données sont chargées : ${n} ${state.table === 'Submissions' ? rowUnit() : 'lignes'}. Créez votre premier graphique :</strong>
       <ol>
-        <li>Dans le panneau de gauche, cliquez sur un champ${ex.cat ? `, par exemple <em>${esc(fieldLabel(ex.cat))}</em>` : ''}, puis sur <b>Ajouter aux Lignes</b> (ou glissez-le dans <b>Lignes</b>) : vous obtenez le nombre de soumissions par catégorie.</li>
+        <li>Dans le panneau de gauche, cliquez sur un champ${ex.cat ? `, par exemple <em>${esc(fieldLabel(ex.cat))}</em>` : ''}, puis sur <b>Ajouter aux Lignes</b> (ou glissez-le dans <b>Lignes</b>) : vous obtenez le nombre de ${state.table === 'Submissions' ? rowUnit() : 'lignes'} par catégorie.</li>
         ${ex.date && ex.cat ? `<li>Pour suivre l'évolution, placez plutôt <em>${esc(fieldLabel(ex.date))}</em> en <b>Lignes</b> (par mois) et <em>${esc(fieldLabel(ex.cat))}</em> en <b>Colonnes</b>.</li>` : '<li>Ajoutez si besoin un 2ᵉ champ en <b>Colonnes</b> pour croiser deux variables.</li>'}
         <li>Choisissez le type de graphique dans la liste en haut de l'écran.</li>
       </ol>
@@ -1175,10 +1175,10 @@ function renderVisTypeOptions() {
   const groups = [...new Set(VIS.map(v => v.group))];
   $('#visType').innerHTML = groups.map(g => `<optgroup label="${esc(g)}">${VIS.filter(v => v.group === g).map(v => `<option value="${v.id}">${esc(v.label)}${v.superset ? '  ✦' : ''}</option>`).join('')}</optgroup>`).join('');
 }
-// XLSForm languages are already readable ("Français (fr)"); CommCare uses codes ("fr", "por")
+// XLSForm languages are already readable ("Français (fr)"); CommCare and DHIS2 use codes ("fr", "por", "pt_BR")
 function langName(l) {
-  if (!/^[a-z]{2,3}(-[A-Za-z]{2,4})?$/.test(l)) return l;
-  try { const n = new Intl.DisplayNames(['fr'], { type: 'language' }).of(l); if (n && n !== l) return `${n[0].toUpperCase()}${n.slice(1)} (${l})`; } catch { /* old browser */ }
+  if (!/^[a-z]{2,3}([-_][A-Za-z]{2,4})?$/.test(l)) return l;
+  try { const n = new Intl.DisplayNames(['fr'], { type: 'language' }).of(l.replace('_', '-')); if (n && n !== l) return `${n[0].toUpperCase()}${n.slice(1)} (${l})`; } catch { /* old browser */ }
   return l;
 }
 function renderLangOptions() {
@@ -1190,7 +1190,10 @@ function renderLangOptions() {
   $('#optLang').innerHTML = opts.join('') + '<option value="__raw">Valeurs brutes</option>';
 }
 function renderTableOptions() {
-  $('#table').innerHTML = tables.map(t => `<option value="${esc(t)}">${esc(t === 'Submissions' ? 'Soumissions (principale)' : 'Répétition : ' + tableLabel(t))}</option>`).join('');
+  // ODK-like forms: "Soumissions" + "Répétition : …"; DHIS2 / mSupply: what the rows are (inscriptions, lines…)
+  const unit = rowUnit(), odkLike = unit === 'soumissions';
+  const main = `${unit[0].toUpperCase()}${unit.slice(1)} (principale)`;
+  $('#table').innerHTML = tables.map(t => `<option value="${esc(t)}">${esc(t === 'Submissions' ? main : (odkLike ? 'Répétition : ' : '↳ ') + tableLabel(t))}</option>`).join('');
   $('#table').value = state.table;
 }
 
@@ -1277,9 +1280,24 @@ async function loadProjects() {
   await loadForms();
 }
 
+// what each form says about itself (DHIS2 / mSupply): name of its rows, meaning of the date filter
+let formsList = [];
+const formInfo = () => formsList.find(f => f.id === state.formId) || {};
+// "1 234 soumissions", "1 234 lots en stock"... (main table)
+const rowUnit = () => formInfo().unit || 'soumissions';
+function applyFormInfo() {
+  const info = formInfo();
+  const ui = PLATFORM_UI[currentUser?.platform] || PLATFORM_UI.odk;
+  // dates: false = the source has no date (a stock snapshot); a string = what the dates filter
+  $('#from').closest('.row2').hidden = info.dates === false;
+  if (info.dates === false && (state.from || state.to)) { state.from = state.to = ''; $('#from').value = $('#to').value = ''; }
+  $('#fromLabel').textContent = typeof info.dates === 'string' ? info.dates : currentUser?.demo ? 'Soumis du' : ui.from;
+}
+
 async function loadForms() {
   if (!state.projectId) return;
-  const list = await api(`/api/projects/${state.projectId}/forms`);
+  const list = await api(`/api/projects/${encodeURIComponent(state.projectId)}/forms`);
+  formsList = list;
   $('#form').innerHTML = list.map(f => `<option value="${esc(f.id)}">${esc(f.name)}${f.submissions != null ? ` (${f.submissions})` : ''}</option>`).join('');
   if (!state.formId || !list.some(f => f.id === state.formId)) state.formId = list[0] && list[0].id;
   $('#form').value = state.formId || '';
@@ -1288,7 +1306,7 @@ async function loadForms() {
 
 async function loadForm() {
   if (!state.formId) { data = []; fields = []; tables = []; labels = null; render(); return; }
-  const base = `/api/projects/${state.projectId}/forms/${encodeURIComponent(state.formId)}`;
+  const base = `/api/projects/${encodeURIComponent(state.projectId)}/forms/${encodeURIComponent(state.formId)}`;
   const [tbls, flds, lbl, trs] = await Promise.all([
     api(base + '/tables'), api(base + '/fields'),
     api(base + '/labels').catch(e => { console.warn('Libellés indisponibles :', e.message); return null; }),
@@ -1302,6 +1320,7 @@ async function loadForm() {
   pendingTransforms = null;
   compileTransforms();
   if (!tables.includes(state.table)) state.table = 'Submissions';
+  applyFormInfo();
   renderLangOptions();
   renderTableOptions();
   setFieldsForTable();
@@ -1385,7 +1404,7 @@ function compileTransforms() {
 }
 
 async function saveTransform(def, { copy = false } = {}) {
-  const base = `/api/projects/${state.projectId}/forms/${encodeURIComponent(state.formId)}/transforms`;
+  const base = `/api/projects/${encodeURIComponent(state.projectId)}/forms/${encodeURIComponent(state.formId)}/transforms`;
   const body = JSON.stringify({ ...def, local: undefined, mine: undefined, ...(copy ? { id: undefined } : {}) });
   const existing = !copy && transforms.find(t => t.id === def.id && !t.local);
   const saved = existing ? await api(`${base}/${def.id}`, { method: 'PUT', body }) : await api(base, { method: 'POST', body });
@@ -1399,7 +1418,7 @@ async function deleteTransform(def) {
   const users = transforms.filter(t => t.id !== def.id && (t.source?.endsWith('__f/' + def.id) || (t.opts?.expr || '').includes(def.id)));
   if (!confirm(`Supprimer le champ « ${def.name} » ?${users.length ? `\n\nAttention : ${users.length} autre(s) champ(s) transformé(s) l'utilisent.` : ''}`)) return;
   try {
-    if (!def.local) await api(`/api/projects/${state.projectId}/forms/${encodeURIComponent(state.formId)}/transforms/${def.id}`, { method: 'DELETE' });
+    if (!def.local) await api(`/api/projects/${encodeURIComponent(state.projectId)}/forms/${encodeURIComponent(state.formId)}/transforms/${def.id}`, { method: 'DELETE' });
   } catch (e) { return toast(e.message, true); }
   transforms = transforms.filter(t => t.id !== def.id);
   const gone = p => p.endsWith('__f/' + def.id);
@@ -1699,7 +1718,7 @@ function openFormatter({ field = null, def = null } = {}) {
   };
   if ($('#fxDelete', dlg)) $('#fxDelete', dlg).onclick = () => { dlg.close(); deleteTransform(def); };
   if ($('#fxReset', dlg)) $('#fxReset', dlg).onclick = async () => {
-    try { await api(`/api/projects/${state.projectId}/forms/${encodeURIComponent(state.formId)}/transforms/${def.id}`, { method: 'DELETE' }); }
+    try { await api(`/api/projects/${encodeURIComponent(state.projectId)}/forms/${encodeURIComponent(state.formId)}/transforms/${def.id}`, { method: 'DELETE' }); }
     catch (e) { return toast(e.message, true); }
     transforms = transforms.filter(t => t.id !== def.id); compileTransforms(); setFieldsForTable(); render(); dlg.close();
   };
@@ -1714,7 +1733,7 @@ async function fetchTable(table, { refresh = '', wait = false } = {}) {
   if (state.reviewState) p.set('reviewState', state.reviewState);
   if (refresh) p.set('refresh', refresh);
   if (wait) p.set('wait', '1');
-  const url = `/api/projects/${state.projectId}/forms/${encodeURIComponent(state.formId)}/data?${p}`;
+  const url = `/api/projects/${encodeURIComponent(state.projectId)}/forms/${encodeURIComponent(state.formId)}/data?${p}`;
   const res = await fetch(url, { headers: { 'Content-Type': 'application/json' } });
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
@@ -1772,7 +1791,7 @@ const hhmm = t => new Date(t).toLocaleTimeString('fr-FR', { hour: '2-digit', min
 function renderStatus() {
   if (!dataStatus) return;
   const rs = dataStatus.results;
-  const unit = state.table === 'Submissions' ? 'soumissions' : `lignes « ${tableLabel(state.table)} »`;
+  const unit = state.table === 'Submissions' ? rowUnit() : `lignes « ${tableLabel(state.table)} »`;
   const checked = Math.min(...rs.map(r => r.checkedAt)), changed = Math.max(...rs.map(r => r.dataAt));
   const st = rs.some(r => r.refreshing || r.state === 'stale') ? 'busy' : rs.some(r => r.state === 'hit') ? 'cached' : 'fresh';
   $('#rowCount').innerHTML = `${data.length.toLocaleString('fr-FR')} ${esc(unit)}`;
@@ -1979,6 +1998,24 @@ const PLATFORM_UI = {
     pwHelp: 'Conseillé : une clé API, à créer dans CommCare HQ → Paramètres du compte → Clés API. Obligatoire avec la double authentification ou le SSO.',
     sub: 'Connectez-vous avec votre compte web <b>CommCare HQ</b>. Il lui faut les droits « Accès à l\'API » et « Modifier les données » du projet.',
     foot: 'La clé API ou le mot de passe est transmis uniquement à CommCare HQ et n\'est gardé qu\'en mémoire, le temps de votre session.', from: 'Reçues du',
+    project: 'Projet (espace)',
+  },
+  dhis2: {
+    name: 'DHIS2', server: 'Serveur DHIS2', placeholder: 'https://dhis2.monministere.org',
+    serverHelp: 'L\'adresse de votre DHIS2, sans « /dhis-web-… » (par exemple https://play.im.dhis2.org/stable-2-41-3).',
+    user: 'Nom d\'utilisateur', userType: 'text', pw: 'Mot de passe ou jeton d\'accès personnel', remember: 'Mémoriser ce serveur et cet identifiant sur cet appareil',
+    pwHelp: 'Avec un jeton d\'accès personnel (d2pat_…, à créer dans DHIS2 → Profil → Jetons d\'accès personnels), le nom d\'utilisateur est facultatif.',
+    sub: 'Connectez-vous avec votre compte <b>DHIS2</b> : programmes d\'événements, programmes tracker et données agrégées, limités à vos unités d\'organisation.',
+    foot: 'Le mot de passe ou le jeton est transmis uniquement à votre DHIS2 et n\'est gardé qu\'en mémoire, le temps de votre session.', from: 'Du',
+    project: 'Type de données', form: 'Programme / ensemble de données',
+  },
+  msupply: {
+    name: 'mSupply', server: 'Serveur mSupply', placeholder: 'https://msupply.monorg.org:8000',
+    serverHelp: 'Open mSupply (serveur central ou site) ou serveur web de mSupply Desktop. L\'application reconnaît le type de serveur.',
+    user: 'Nom d\'utilisateur', userType: 'text', pw: 'Mot de passe', remember: 'Mémoriser ce serveur et cet identifiant sur cet appareil',
+    sub: 'Connectez-vous avec votre compte <b>mSupply</b> : stock, expéditions, réceptions, dispensations et réquisitions des magasins autorisés pour votre compte.',
+    foot: 'Le mot de passe est transmis uniquement à votre serveur mSupply et n\'est jamais enregistré.', from: 'Créées du',
+    project: 'Magasin', form: 'Données',
   },
 };
 const platformName = () => (currentUser?.demo ? 'la démo' : currentUser?.platformLabel || PLATFORM_UI[currentUser?.platform || 'odk']?.name || 'la plateforme');
@@ -2062,7 +2099,11 @@ function applyPlatform(me) {
   const reviewState = !me.features || me.features.reviewState !== false;
   $('#reviewWrap').hidden = !reviewState;
   if (!reviewState) { state.reviewState = ''; $('#reviewState').value = ''; }
-  $('#fromLabel').textContent = (PLATFORM_UI[me.platform] || PLATFORM_UI.odk).from;
+  const ui = PLATFORM_UI[me.platform] || PLATFORM_UI.odk;
+  $('#fromLabel').textContent = ui.from;
+  // what "project" and "form" mean on each platform
+  $('#projectLabel').textContent = me.demo ? 'Projet' : ui.project || 'Projet';
+  $('#formLabel').textContent = me.demo ? 'Formulaire' : ui.form || 'Formulaire';
 }
 
 async function startApp(me, fresh) {

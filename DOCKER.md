@@ -10,9 +10,9 @@ docker compose ps            # doit afficher "healthy"
 docker compose logs -f       # journaux
 ```
 
-Ouvrir `http://IP-DU-SERVEUR:3000`. L'écran de connexion demande la **plateforme** (ODK Central, IASO ou CommCare), l'**adresse du serveur**, l'**identifiant** et le **mot de passe** (ou la clé API pour CommCare). Aucun identifiant n'est à mettre dans un fichier.
+Ouvrir `http://IP-DU-SERVEUR:3000`. L'écran de connexion demande la **plateforme** (ODK Central, IASO, CommCare, DHIS2 ou mSupply), l'**adresse du serveur**, l'**identifiant** et le **mot de passe** (ou la clé API pour CommCare, le jeton d'accès personnel pour DHIS2). Aucun identifiant n'est à mettre dans un fichier.
 
-Le conteneur doit pouvoir joindre les serveurs choisis par les utilisateurs en HTTPS sortant (par ex. `iaso.bluesquare.org`, `www.commcarehq.org`).
+Le conteneur doit pouvoir joindre les serveurs choisis par les utilisateurs en HTTPS sortant (par ex. `iaso.bluesquare.org`, `www.commcarehq.org`, votre DHIS2 ou votre serveur mSupply, avec son port).
 
 ## 2. Réglages facultatifs
 
@@ -20,9 +20,9 @@ Le fichier `.env` n'est pas obligatoire. Pour l'utiliser : `cp .env.example .env
 
 | Variable | Rôle |
 |---|---|
-| `PLATFORMS` | Plateformes proposées : `odk,iaso,commcare` (défaut), ou une partie seulement |
-| `ODK_DEFAULT_URL` / `IASO_DEFAULT_URL` / `COMMCARE_DEFAULT_URL` | Serveur pré-rempli pour chaque plateforme |
-| `ODK_LOCK_URL=true` (idem `IASO_LOCK_URL`, `COMMCARE_LOCK_URL`) | Impose ce serveur : l'utilisateur saisit seulement identifiant et mot de passe |
+| `PLATFORMS` | Plateformes proposées : `odk,iaso,commcare,dhis2,msupply` (défaut), ou une partie seulement |
+| `ODK_DEFAULT_URL` / `IASO_…` / `COMMCARE_…` / `DHIS2_…` / `MSUPPLY_DEFAULT_URL` | Serveur pré-rempli pour chaque plateforme |
+| `ODK_LOCK_URL=true` (idem `IASO_`, `COMMCARE_`, `DHIS2_`, `MSUPPLY_LOCK_URL`) | Impose ce serveur : l'utilisateur saisit seulement identifiant et mot de passe |
 | `ALLOWED_SERVERS` | Liste blanche de serveurs autorisés, toutes plateformes (séparés par des virgules) |
 | `ALLOW_DEMO=false` | Masque le bouton « données de démonstration » |
 | `HOST_PORT` | Port publié sur le serveur (défaut 3000) |
